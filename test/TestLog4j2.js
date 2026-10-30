@@ -229,6 +229,30 @@ check({
     command: "Level.INFO.intLevel(); Level.INFO.isInRange(DEBUG, WARN); Level.forName(\"INFO\", 0); log.isInfoEnabled(marker)"
 });
 
+// Case G8
+// dbVerify on the persisted state: the engine's DatabaseOut path writes these
+// rows into logdb.app_logger_msg (async flush, OutLogTimer=1s), so poll until they
+// appear instead of assuming a fixed delay. Console.getDataSource() is the
+// datasource the engine writes through (config/DataSource.properties -> logdb).
+var dbSql = "select count(*) as TOTAL from app_logger_msg where message like '%" + tag + "%'";
+var dbCount = -1;
+for (var dbTry = 0; dbTry < 10; dbTry++) {
+    dbVerify(function () { return dbSql; });
+    dbCount = (dbvResult !== null && dbvResult.error === undefined && dbvResult.rows !== undefined
+        && dbvResult.rows.length > 0) ? parseInt(dbvResult.rows[0][0], 10) : -1;
+    if (dbCount > 0) {
+        break;
+    }
+    Thread.sleep(500);
+}
+check({
+    name: "log4j2 rows persisted in app_logger_msg (dbVerify)",
+    ok: dbCount > 0,
+    detail: "rows matching the suite tag=" + dbCount,
+    objective: "Verify the log4j2 log calls are persisted into app_logger_msg by the engine's DatabaseOut path",
+    objectiveZh: "驗證 log4j2 的日誌呼叫由引擎 DatabaseOut 路徑寫入 app_logger_msg",
+    command: "dbVerify(\"" + dbSql + "\")"
+});
 writeReport();
 writeMd();
 print("TestLog4j2 result: " + passCount + " passed, " + failCount + " failed");
