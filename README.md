@@ -14,7 +14,7 @@ The toolchain is bundled with this project (no Java / Ant installation, no `JAVA
 | 2. Test | `test\TestAll.bat` (Linux/macOS: `test\TestAll.sh`) | `docs/latest/report\*` (HTML / MD / CI summary), archived per run to `docs/reports\<version>.jar` |
 | 3. Slim runtime | `packJdk.bat` (Linux/macOS: `packJdk.sh`) | `Java\runtime` (jlink cut-down) |
 
-Baseline: `ant build` → BUILD SUCCESSFUL; `TestAll.bat` → **50 passed / 0 failed, exit 0** (8 JS suites: 2 engine-side — TestConsole (test-environment prerequisite) and TestLog (`com.killcoding.log`) — plus the 5 replacement-layer vendor suites TestSlf4j / TestCommonsLogging / TestJuli / TestLog4j / TestLog4j2, plus LoadTest for sustained-load behaviour). `test\TestFacades.bat` runs the 5 vendor suites alone (**29/29, exit 0**) as a dedicated facade gate; `test\LoadTest.bat` runs the load suite alone (**6/6, exit 0**).
+Baseline: `ant build` → BUILD SUCCESSFUL; `TestAll.bat` → **57 passed / 0 failed, exit 0** (8 JS suites: 2 engine-side — TestConsole (test-environment prerequisite) and TestLog (`com.killcoding.log`) — plus the 5 replacement-layer vendor suites TestSlf4j / TestCommonsLogging / TestJuli / TestLog4j / TestLog4j2, plus LoadTest for sustained-load behaviour). `test\TestFacades.bat` runs the 5 vendor suites alone (**34/34, exit 0**) as a dedicated facade gate; `test\LoadTest.bat` runs the load suite alone (**7/7, exit 0**).
 
 ## Engineering Standard (aligned with JsPlus-Core)
 
@@ -93,7 +93,7 @@ Three checks, all runnable locally before a release:
 | --- | --- | --- |
 | Method-by-method diff against the five official API jars | `python build/iface-audit/compare.py` | 0 missing in every family (61/81, 18/84, 18/18, 55/122, 384/424) |
 | Dual compile of one official-API sample | `test\iface\refapi\CompileApiSample.bat` | the same `ApiUsageSample.java` compiles against the official jars **and** against `jsplus-logreplaced` |
-| Runtime smoke of the five facades | `test\TestFacades.bat` | 29/29 across 5 vendor suites (7 + 5 + 4 + 6 + 7), exit 0 — every facade call reaches `logs/app/<yyyyMMdd>.log` |
+| Runtime smoke of the five facades | `test\TestFacades.bat` | 34/34 across 5 vendor suites (8 + 6 + 5 + 7 + 8), exit 0 — every facade call reaches `logs/app/<yyyyMMdd>.log` |
 
 Reference jars sit in `build/iface-audit/ref/` (slf4j-api 1.7.36, commons-logging 1.2, tomcat-juli 9.0.85, log4j 1.2.17, log4j-api 2.20.0); the plan and decision log is `INTERFACE-PLAN.md`. The replacement layer cannot coexist with the official logging jars on the same class path (same package names).
 
@@ -219,8 +219,19 @@ endpoint finds one.
 | Table | Grain | Columns (mapped to `Logger.properties` / `MessageFormat`) |
 | --- | --- | --- |
 | `app_logger_config` | one row per host — the row `DatabaseOutConfigFrom` reads | `hostname` (the `:hostname` lookup key), `level`, `class_name_enable_regex`, `class_name_disable_regex` — the only three keys `LogRecord.writeLogBatchToDatabase` accepts |
-| `app_logger_msg` | one row per log event | `app_name`, `logger_name` (`:log_class_name`), `log_level` (`:level`), `log_time` (`:log_time_format`), `hostname`, `thread_name` (`:log_thread_name`), `thread_id` (`:log_thread_id`), `message` (CLOB, `:message`), `stack_trace` (CLOB, `:stack_trace`) |
+| `app_logger_msg` | one row per log event | `app_name`, `logger_name` (`:log_class_name`), `log_level` (`:level`), `log_time` (`:log_time_format`), `hostname`, `thread_name` (`:log_thread_name`), `thread_id` (`:log_thread_id`), `message` (`VARCHAR(2000)`, `:message`), `stack_trace` (`VARCHAR(2000)`, `:stack_trace`) |
 
-Both tables use the project convention `id CHAR(16) PRIMARY KEY` + `created_at` / `updated_at` / `deleted_at` / `deleted` (soft delete). `message` and `stack_trace` are `CLOB` on purpose - the load suite writes 8000-character payloads and multi-frame stack traces.
+Both tables use the project convention `id CHAR(16) PRIMARY KEY` + `created_at` / `updated_at` / `deleted_at` / `deleted` (soft delete). `message` and `stack_trace` are `VARCHAR(2000)`, and the INSERT caps both with `LEFT(:message, 2000)` / `LEFT(:stack_trace, 2000)`: H2 rejects a longer value with `Value too long for column ... [22001-240]` (a 2020-character payload already fails) and a single rejected row aborts the whole JDBC batch, so the cap sits in the statement rather than in the caller. The first 2000 characters reach the database; the **untruncated** text stays in the file log - the load suite writes 8000-character messages (an 8111-character line was measured in `logs/app`) and multi-frame stack traces (13335 characters measured). Widen the column and the cap together, or the batch starts failing again.
 
 The Core-inherited `ghost_remote_command` queue is **not** created here: this layer's job is the unified log path, not remote command dispatch. `JsPlus/config/GhostDataSource.properties` stays Core-identical for future use, and the `-GhostName H2Ghost` console then retries without a queue (H2 itself is unaffected).
+
+
+## License and Trademarks
+
+**License.** MIT - see `LICENSE`. The same `LICENSE` and `NOTICE` are bundled into every jar at `META-INF/`.
+
+**Independent reimplementation.** Every `.java` file under `src/` was written for this project: no Apache Software Foundation or QOS.ch source is included, copied or adapted, and no upstream logging jar is redistributed (`LibHome` holds only the script engine, the H2 driver, the bundled JDK/Ant and the JsPlus jars). The Log4j 2 `Logger` interface and its implementation class are generated from a `javap` **signature dump** (`build/iface-audit/log4j2_Logger_official.txt` via `build/tools/genLog4j2.py`): method names, parameter types and modifiers only - no bodies, no comments, and no parameter names, which `javap` does not emit. Every method body routes into the JsPlus engine.
+
+**Trademarks.** "Apache", "Apache Log4j", "Apache Commons Logging", "Apache Tomcat" and "JULI" are trademarks or registered trademarks of the Apache Software Foundation; "SLF4J" is a trademark of QOS.ch. The packages `org.apache.commons.logging`, `org.apache.juli.logging`, `org.apache.log4j`, `org.apache.logging.log4j` and `org.slf4j` are reused **for binary compatibility only** - a class compiled against the official API can only link against a replacement that declares the same qualified names. That reuse is nominative and descriptive; it does not imply sponsorship, endorsement or affiliation, and this project is **not** an Apache project nor the SLF4J reference implementation. No upstream logo or branding appears anywhere in this distribution. The full statement is in `NOTICE`.
+
+**Coexistence.** These classes declare the same packages as the official artifacts. Remove the official logging jar before putting this jar on the class path (and never place both on the module path): otherwise the packages split, and under JPMS they collide. Keeping the official jar out is the purpose of this layer.

@@ -293,6 +293,9 @@
 			    <include name="com/**/**/*" />
 				<include name="org/**/**/*" />
 			</fileset>
+			<!-- License and provenance travel with the jar: NOTICE states that this is an independent clean-room
+			     reimplementation and that the org.apache.* / org.slf4j package names are reused for binary compatibility only. -->
+			<zipfileset dir="${jr.root}" includes="LICENSE,NOTICE" prefix="META-INF/" />
 
 			<!--<manifest>-->
 			<!--    <attribute name="Main-Class"  value="com.killcoding.jsplus.Main"/>-->

@@ -14,7 +14,7 @@ JsPlus-LogReplaced 是 **JsPlus 的日誌替換層**——為五種日誌門面�
 | 2. 測試 | `test\TestAll.bat`（Linux/macOS：`test\TestAll.sh`） | `docs/latest/report\*`（HTML / MD / CI 摘要），每次執行歸檔至 `docs/reports\<version>.jar` |
 | 3. 精簡執行環境 | `packJdk.bat`（Linux/macOS：`packJdk.sh`） | `Java\runtime`（jlink 裁減） |
 
-基線：`ant build` → BUILD SUCCESSFUL；`TestAll.bat` → **50 passed / 0 failed，exit 0**（8 個 JS 套件：2 個引擎側——TestConsole（測試環境前置）與 TestLog（`com.killcoding.log`）——加 5 個替換層廠商套件 TestSlf4j / TestCommonsLogging / TestJuli / TestLog4j / TestLog4j2，再加持續負載套件 LoadTest）。`test\TestFacades.bat` 單獨跑 5 個廠商套件（**29/29，exit 0**），作為專用的門面閘門；`test\LoadTest.bat` 單獨跑負載套件（**6/6，exit 0**）。
+基線：`ant build` → BUILD SUCCESSFUL；`TestAll.bat` → **57 passed / 0 failed，exit 0**（8 個 JS 套件：2 個引擎側——TestConsole（測試環境前置）與 TestLog（`com.killcoding.log`）——加 5 個替換層廠商套件 TestSlf4j / TestCommonsLogging / TestJuli / TestLog4j / TestLog4j2，再加持續負載套件 LoadTest）。`test\TestFacades.bat` 單獨跑 5 個廠商套件（**34/34，exit 0**），作為專用的門面閘門；`test\LoadTest.bat` 單獨跑負載套件（**7/7，exit 0**）。
 
 ## 工程標準（對齊 JsPlus-Core）
 
@@ -93,7 +93,7 @@ JsPlus-LogReplaced 是 **JsPlus 的日誌替換層**——為五種日誌門面�
 | --- | --- | --- |
 | 逐方法比對五個官方 API jar | `python build/iface-audit/compare.py` | 五家族全部 0 缺失（61/81、18/84、18/18、55/122、384/424） |
 | 同一份官方 API 樣例雙向編譯 | `test\iface\refapi\CompileApiSample.bat` | `ApiUsageSample.java` 對官方 jar 與對 `jsplus-logreplaced` 均編譯通過 |
-| 五門面執行期冒煙 | `test\TestFacades.bat` | 5 個廠商套件共 29/29（7 + 5 + 4 + 6 + 7），exit 0——每個門面呼叫都落到 `logs/app/<yyyyMMdd>.log` |
+| 五門面執行期冒煙 | `test\TestFacades.bat` | 5 個廠商套件共 34/34（8 + 6 + 5 + 7 + 8），exit 0——每個門面呼叫都落到 `logs/app/<yyyyMMdd>.log` |
 
 對照 jar 置於 `build/iface-audit/ref/`（slf4j-api 1.7.36、commons-logging 1.2、tomcat-juli 9.0.85、log4j 1.2.17、log4j-api 2.20.0）；方案與決策記錄見 `INTERFACE-PLAN.md`。替換層不可與官方日誌 jar 同 classpath 共存（套件同名）。
 
@@ -214,8 +214,19 @@ test\TestAll.bat
 | 表 | 粒度 | 欄位（對應 `Logger.properties` / `MessageFormat`） |
 | --- | --- | --- |
 | `app_logger_config` | 每個 host 一行 —— `DatabaseOutConfigFrom` 讀的就是它 | `hostname`（`:hostname` 查詢鍵）、`level`、`class_name_enable_regex`、`class_name_disable_regex` —— 引擎 `LogRecord.writeLogBatchToDatabase` 只認這三個鍵 |
-| `app_logger_msg` | 每個日誌事件一行 | `app_name`、`logger_name`（`:log_class_name`）、`log_level`（`:level`）、`log_time`（`:log_time_format`）、`hostname`、`thread_name`（`:log_thread_name`）、`thread_id`（`:log_thread_id`）、`message`（CLOB，`:message`）、`stack_trace`（CLOB，`:stack_trace`） |
+| `app_logger_msg` | 每個日誌事件一行 | `app_name`、`logger_name`（`:log_class_name`）、`log_level`（`:level`）、`log_time`（`:log_time_format`）、`hostname`、`thread_name`（`:log_thread_name`）、`thread_id`（`:log_thread_id`）、`message`（`VARCHAR(2000)`，`:message`）、`stack_trace`（`VARCHAR(2000)`，`:stack_trace`） |
 
-兩張表都沿用項目慣例：`id CHAR(16) PRIMARY KEY` ＋ `created_at` / `updated_at` / `deleted_at` / `deleted`（軟刪除）。`message` 與 `stack_trace` 刻意用 `CLOB`——負載套件會寫 8000 字元訊息與多 Frame 堆疊。
+兩張表都沿用項目慣例：`id CHAR(16) PRIMARY KEY` ＋ `created_at` / `updated_at` / `deleted_at` / `deleted`（軟刪除）。`message` 與 `stack_trace` 為 `VARCHAR(2000)`，INSERT 以 `LEFT(:message, 2000)` / `LEFT(:stack_trace, 2000)` 截斷：H2 對超長值報 `Value too long for column ... [22001-240]`（實測 2020 字元即失敗），而 `executeBatch` 只要有一列被拒就整批回滾，故截斷放在語句而非呼叫端。入庫保留前 2000 字元，**未截斷的全文保留在檔案日誌**——負載套件寫 8000 字元訊息（`logs/app` 實測該行為 8111 字元）與多 Frame 堆疊（實測 13335 字元）。若要加長，欄位與截斷上限必須同時放寬，否則批次會再次失敗。
 
 Core 繼承下來的 `ghost_remote_command` 佇列**不在此建立**：本層職責是統一口徑的日誌路徑，不是遠程命令派發。`JsPlus/config/GhostDataSource.properties` 保留 Core 同構以備日後啟用，屆時 `-GhostName H2Ghost` 主控台會因缺表空轉重試（H2 服務本身不受影響）。
+
+
+## 授權與商標
+
+**授權。** MIT —— 見 `LICENSE`。同一份 `LICENSE` 與 `NOTICE` 會被打包進每個 jar 的 `META-INF/`。
+
+**獨立重實現。** `src/` 下每個 `.java` 都是為本專案撰寫：未包含、複製或改寫任何 Apache Software Foundation 或 QOS.ch 的原始碼，亦不再分發任何原廠日誌 jar（`LibHome` 只有腳本引擎、H2 驅動、內建 JDK/Ant 與 JsPlus 各 jar）。Log4j 2 的 `Logger` 介面與其實現類由 `javap` **簽名轉儲**生成（`build/iface-audit/log4j2_Logger_official.txt`，經 `build/tools/genLog4j2.py`）：只取方法名、參數型別與修飾符——不含方法體、不含註釋，亦不含參數名（`javap` 本就不輸出參數名）。每個方法體一律轉向 JsPlus 引擎。
+
+**商標。** 「Apache」「Apache Log4j」「Apache Commons Logging」「Apache Tomcat」「JULI」為 Apache Software Foundation 的商標或註冊商標；「SLF4J」為 QOS.ch 的商標。`org.apache.commons.logging`、`org.apache.juli.logging`、`org.apache.log4j`、`org.apache.logging.log4j`、`org.slf4j` 這幾個套件名**僅為二進位相容而沿用**——針對官方 API 編譯過的 class，只能連結到宣告相同全限定名的替代品。此種沿用屬指名性使用，不代表贊助、背書或隸屬關係；本專案**不是** Apache 專案，也**不是** SLF4J 的參考實現，全專案未使用任何上游徽標或品牌素材。完整聲明見 `NOTICE`。
+
+**共存限制。** 這些 class 與官方產物宣告相同套件。放入 classpath 前必須先移除原廠日誌 jar（更不可同時放上 module path）：否則套件會分裂，在 JPMS 下更會直接衝突。把原廠 jar 擋在外面，正是這一層存在的目的。

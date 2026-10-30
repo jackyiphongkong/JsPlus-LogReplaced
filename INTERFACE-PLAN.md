@@ -263,17 +263,17 @@ python build/iface-audit/compare.py         ->  0 missing / 五家族
 test\iface\refapi\CompileApiSample.bat      ->  BOTH COMPILES OK
      同一份 ApiUsageSample.java：官方 5 jar 編譯通過；本層 jar 編譯通過
 
-test\TestFacades.bat                        ->  29 passed / 0 failed, exit 0
-     五個廠商套件（TestSlf4j 7 / TestCommonsLogging 5 / TestJuli 4 / TestLog4j 6 / TestLog4j2 7）
+test\TestFacades.bat                        ->  34 passed / 0 failed, exit 0
+     五個廠商套件（TestSlf4j 8 / TestCommonsLogging 6 / TestJuli 5 / TestLog4j 7 / TestLog4j2 8）
      每個門面呼叫實際落入 logs/app/20261030.log
 
-test\TestAll.bat                            ->  87 passed / 0 failed, exit 0（10 套件）
-ant build                                   ->  jsplus-logreplaced-6.1.28.jar + docs/apis/6.1.28.jar
+test\TestAll.bat                            ->  57 passed / 0 failed, exit 0（8 套件）
+ant build                                   ->  jsplus-logreplaced-6.1.30.jar + docs/apis/6.1.30.jar
 ```
 
 ### 10.3 與方案的三處偏離（如實記錄）
 
-1. **M4 統一出口（`LogCore`/`LevelMapper`/`ArgFormatter`）未實施**：各家族仍各自持有映射邏輯（`slf4j.LoggerClass` 為核心，commons/log4j1/log4j2 繼承它，JULI 仍是獨立 `LogCustom`）。原因：優先完成介面全量與可驗證性，重構會動到已全綠的測試路徑（現為 87 用例）；此項保留為 P2（QUALITY-REVIEW #6）。
+1. **M4 統一出口（`LogCore`/`LevelMapper`/`ArgFormatter`）未實施**：各家族仍各自持有映射邏輯（`slf4j.LoggerClass` 為核心，commons/log4j1/log4j2 繼承它，JULI 仍是獨立 `LogCustom`）。原因：優先完成介面全量與可驗證性，重構會動到已全綠的測試路徑（現為 57 用例）；此項保留為 P2（QUALITY-REVIEW #6）。
 2. **`org.apache.logging.log4j.LogManager` 未提供 `getContext()`/`setFactory()`/`getFactory()`**：本層沒有可插拔的 `LoggerContext`，補這些入口需再造 `spi.LoggerContext` + `LoggerContextFactory` 類型體系；目前口徑是「調用面齊備，context 管理屬實作層不提供」。
 3. **log4j2 `Level` 以 enum 實作**（官方為 final class）：保留 `values()/valueOf()/name()`；`Level.valueOf(Class,String)`、`readResolve()` 等 enum 自動形態與官方不逐方法一致，閘門未把 `Level` 納入方法級比對（只比對 `Logger` 的 384 與各家族入口類）。
 
@@ -294,6 +294,8 @@ ant build                                   ->  jsplus-logreplaced-6.1.28.jar + 
 | `TestJuli.js` | 4 | `getLog` → `LogCustom`、18 方法全可呼叫、`info` 落盤、`fatal` → `ERROR` |
 | `TestLog4j.js` | 6 | `getName`、`Level=INFO` 下 debug 被過濾、`setLevel(DEBUG)` 後 debug 落盤、`fatal` → `ERROR`、`log(Priority,...)` 映射、`l7dlog`/appender 安全 no-op |
 | `TestLog4j2.js` | 7 | `getName`、`atInfo().withMarker().withThrowable().log()` 同時帶標記與異常、`fatal` → `ERROR`、`printf` 展開、`trace` → `MARK`、`throwing(T)` 回傳同一實例、`Level` 序／範圍／`forName` |
+
+（上表為第二輪拆分時的用例數；其後每個廠商套件各增一例 dbVerify 落庫斷言，現為 8 / 6 / 5 / 7 / 8，見 10.8。）
 
 **拆分過程中由新斷言暴露並修正的一處實現缺陷**：log4j1 `Category.setLevel(Level)` 原本只寫入欄位、未下推引擎，導致 `setLevel(Level.DEBUG)` 後 `debug()` 仍被引擎 INFO 過濾。已修為 `setLevel`/`setPriority` 一併呼叫 `engine().setLevel(...)`，並把引擎缺少的級別就近折疊（`FATAL`→`ERROR`、`TRACE`/`ALL`→`DEBUG`、`OFF`→`ERROR`）。
 
@@ -317,13 +319,13 @@ ant build                                   ->  jsplus-logreplaced-6.1.28.jar + 
 1. **報告目錄**：由 `test_reports/` 遷至 **`docs/latest/report/`**（Core `TestBase.js` 的同名約定），`TestBase.js` / `TestAll.js`、各套件頭部註解、README、CI 產物路徑與 `.gitignore` 同步。
 2. **報告歸檔**：`TestAll.bat` / `.sh` 每輪把 `docs/latest/report/` 打包成 **`docs/reports/<version>.jar`**（版本取自 `jsplus-logreplaced-<version>.jar` 檔名），並保留最新 10 個；打包失敗僅 WARN、不改退出碼——archive 由 TestAll 自持，ant 只管 `docs/apis`（與 Core 一致）。
 3. **每輪先清理**：`Step 0` 刪除 `JsPlus/.tmp`（`evalJavaSource` / `evalJavaFile` 暫存，同 Core Step 0b）與 `logs/*`，讓每輪從空日誌開始，杜絕歷史行誤判通過（實測 620687 bytes 舊日誌被清空，本輪自寫 39817 bytes）。
-4. **負載套件 `test/LoadTest.js`（6 例）**：突發寫入吞吐（10000 行，呼叫方不得被 I/O 阻塞，實測約 5000 行/秒）、異步 flush 後零丟行、8 KB 訊息完整性、200 個 Throwable、5 個 logger × 1000 行交錯、負載下的級別閘門。註冊為 `TestAll.js` 的**最後**一個套件；獨立入口 `test\LoadTest.bat` / `.sh` 以 `JSPLUS_LOADTEST_EXIT=1` 自持退出碼。
+4. **負載套件 `test/LoadTest.js`（7 例）**：突發寫入吞吐（10000 行，呼叫方不得被 I/O 阻塞，實測約 2300–3500 行/秒，見 10.8）、異步 flush 後零丟行、8 KB 訊息完整性、200 個 Throwable、5 個 logger × 1000 行交錯、負載下的級別閘門。註冊為 `TestAll.js` 的**最後**一個套件；獨立入口 `test\LoadTest.bat` / `.sh` 以 `JSPLUS_LOADTEST_EXIT=1` 自持退出碼。
    - **限制（實測）**：此 GraalVM 版本禁止跨執行緒進入 JS context（`Multi threaded access requested ... not allowed for language(s) js`），且無法從 JS 實例化 Java 介面（`new Runnable({run: fn})` → `Message not supported`），故負載只能單執行緒驅動，但這仍直擊引擎真正的瓶頸——異步寫入佇列。
 
-**最終口徑（實跑，6.1.28 jar）**：
+**最終口徑（最新實跑，6.1.30 jar）**：
 
 | 入口 | 套件 | 用例 | 退出碼 |
 | --- | --- | --- | --- |
-| `test\TestAll.bat` | 8（TestConsole + TestLog + 5 廠商 + LoadTest）＋ 配置自檢 | 50 passed / 0 failed | 0 |
-| `test\TestFacades.bat` | 5（廠商） | 29 passed / 0 failed | 0（任一失敗即 1） |
-| `test\LoadTest.bat` | 1（負載，6 例） | 6 passed / 0 failed | 0（任一失敗即 1） |
+| `test\TestAll.bat` | 8（TestConsole + TestLog + 5 廠商 + LoadTest）＋ 配置自檢 | 57 passed / 0 failed | 0 |
+| `test\TestFacades.bat` | 5（廠商） | 34 passed / 0 failed | 0（任一失敗即 1） |
+| `test\LoadTest.bat` | 1（負載，7 例） | 7 passed / 0 failed | 0（任一失敗即 1） |
