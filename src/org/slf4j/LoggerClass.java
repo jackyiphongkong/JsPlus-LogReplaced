@@ -1,8 +1,8 @@
 package org.slf4j;
 
 /**
- * SLF4J {@code Logger} implementation backed by the JsPlus logging engine
- * ({@code com.killcoding.log.Logger}).
+ * SLF4J 2.0 {@code Logger} implementation backed by the JsPlus logging engine
+ * ({@code com.killcoding.log.Logger}), aligned with slf4j-api 2.0.20.
  *
  * <p>All five official levels map to the engine as follows:</p>
  * <ul>
@@ -15,7 +15,10 @@ package org.slf4j;
  *
  * <p>Markers are rendered as a message prefix ({@code "<marker> - <message>"}):
  * the engine has no marker filtering, so the marker name is preserved in the
- * log line instead of being dropped (design decision D3: "message prefix").</p>
+ * log line instead of being dropped (design decision D3: "message prefix").
+ * The SLF4J 2.0 fluent entry points ({@code atTrace()/atDebug()/atInfo()/
+ * atWarn()/atError()}, {@code atLevel(Level)}) are interface default methods
+ * that dispatch to {@code org.slf4j.spi.LoggingEventBuilderClass}.</p>
  */
 public class LoggerClass implements org.slf4j.Logger {
 

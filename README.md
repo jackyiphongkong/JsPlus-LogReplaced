@@ -14,7 +14,7 @@ The toolchain is bundled with this project (no Java / Ant installation, no `JAVA
 | 2. Test | `test\TestAll.bat` (Linux/macOS: `test\TestAll.sh`) | `docs/latest/report\*` (HTML / MD / CI summary), archived per run to `docs/reports\<version>.jar` |
 | 3. Slim runtime | `packJdk.bat` (Linux/macOS: `packJdk.sh`) | `Java\runtime` (jlink cut-down) |
 
-Baseline: `ant build` → BUILD SUCCESSFUL; `TestAll.bat` → **57 passed / 0 failed, exit 0** (8 JS suites: 2 engine-side — TestConsole (test-environment prerequisite) and TestLog (`com.killcoding.log`) — plus the 5 replacement-layer vendor suites TestSlf4j / TestCommonsLogging / TestJuli / TestLog4j / TestLog4j2, plus LoadTest for sustained-load behaviour). `test\TestFacades.bat` runs the 5 vendor suites alone (**34/34, exit 0**) as a dedicated facade gate; `test\LoadTest.bat` runs the load suite alone (**7/7, exit 0**).
+Baseline: `ant build` → BUILD SUCCESSFUL; `TestAll.bat` → **65 passed / 0 failed, exit 0** (8 JS suites: 2 engine-side — TestConsole (test-environment prerequisite) and TestLog (`com.killcoding.log`) — plus the 5 replacement-layer vendor suites TestSlf4j / TestCommonsLogging / TestJuli / TestLog4j / TestLog4j2, plus LoadTest for sustained-load behaviour). `test\TestFacades.bat` runs the 5 vendor suites alone (**43/43, exit 0**) as a dedicated facade gate; `test\LoadTest.bat` runs the load suite alone (**7/7, exit 0**).
 
 ## Engineering Standard (aligned with JsPlus-Core)
 
@@ -91,11 +91,11 @@ Three checks, all runnable locally before a release:
 
 | Check | Command | Last result |
 | --- | --- | --- |
-| Method-by-method diff against the five official API jars | `python build/iface-audit/compare.py` | 0 missing in every family (61/81, 18/84, 18/18, 55/122, 384/424) |
+| Method-by-method diff against the five official API jars | `python build/iface-audit/compare.py` | 0 missing in every family (69/89, 18/92, 18/18, 55/122, 384/424) |
 | Dual compile of one official-API sample | `test\iface\refapi\CompileApiSample.bat` | the same `ApiUsageSample.java` compiles against the official jars **and** against `jsplus-logreplaced` |
-| Runtime smoke of the five facades | `test\TestFacades.bat` | 34/34 across 5 vendor suites (8 + 6 + 5 + 7 + 8), exit 0 — every facade call reaches `logs/app/<yyyyMMdd>.log` |
+| Runtime smoke of the five facades | `test\TestFacades.bat` | 43/43 across 5 vendor suites (17 + 6 + 5 + 7 + 8), exit 0 — every facade call reaches `logs/app/<yyyyMMdd>.log` |
 
-Reference jars sit in `build/iface-audit/ref/` (slf4j-api 1.7.36, commons-logging 1.2, tomcat-juli 9.0.85, log4j 1.2.17, log4j-api 2.20.0); the plan and decision log is `INTERFACE-PLAN.md`. The replacement layer cannot coexist with the official logging jars on the same class path (same package names).
+Reference jars sit in `build/iface-audit/ref/` (slf4j-api 2.0.20 — the 1.7.36 jar stays in ref/ as history, commons-logging 1.2, tomcat-juli 9.0.85, log4j 1.2.17, log4j-api 2.20.0); the plan and decision log is `INTERFACE-PLAN.md`. The replacement layer cannot coexist with the official logging jars on the same class path (same package names), so the org.slf4j family is upgraded wholesale (1.7.36 → 2.0.20) rather than kept side by side.
 
 ## Test Suite
 
@@ -109,22 +109,22 @@ Every suite is a JavaScript file executed inside the bundled JsPlus console engi
 | --- | --- |
 | Full run: all 8 suites + aggregate report | `test\TestAll.bat` (Linux/macOS: `test\TestAll.sh`) |
 | Only the 5 vendor suites (per-vendor exit code = CI gate) | `test\TestFacades.bat` (Linux/macOS: `test\TestFacades.sh`) |
-| Only the load suite (6 load cases, exit code = CI gate) | `test\LoadTest.bat` (Linux/macOS: `test\LoadTest.sh`) |
+| Only the load suite (7 cases: 6 load + persisted-row verify, exit code = CI gate) | `test\LoadTest.bat` (Linux/macOS: `test\LoadTest.sh`) |
 | A single vendor suite | `TestFacades.bat` runs five separate consoles; to run one, use the same launch line with `-Task test/TestLog4j.js` etc. |
 | Dual-compile conformance sample | `test\iface\refapi\CompileApiSample.bat` |
 | Any single suite | copy the `-Task test/TestXxx.js` line from `TestAll.bat`; every suite is a plain console task and runs standalone too |
 
 Reports land in `docs/latest/report\` (HTML + MD + CI summary) and are archived per run to `docs/reports\<version>.jar` — version taken from the project jar name, newest 10 jars kept, archive failure is WARN-only and never changes the exit code (same layout as JsPlus-Core).
 
-Before any suite runs, `TestAll.bat` / `TestAll.sh` clean `JsPlus\.tmp` (the `evalJavaSource` / `evalJavaFile` scratch tree — same as JsPlus-Core Step 0b) and `logs\*` (the engine output tree, `logs\app\<yyyyMMdd>.log`). Every run therefore starts from an empty log, so the suites only ever see lines this run wrote — a stale line from an earlier run can no longer satisfy a check by accident.
+Before any suite runs, `TestAll.bat` / `TestAll.sh` clean `JsPlus\.tmp` (the `evalJavaSource` / `evalJavaFile` scratch tree — same as JsPlus-Core Step 0b). The engine output tree (`logs\app\<yyyyMMdd>.log`) is **kept** — test data is never deleted: every suite tags its lines with a per-run token (`System.nanoTime`), so assertions only ever match lines this run wrote and a stale line from an earlier run can no longer satisfy a check by accident.
 
 ### The suites
 
 | Suite | Cases | Focus |
 | --- | --- | --- |
 | TestConsole | 9 | Console environment the other suites rely on: `JS_PLUS_PATH`, global `Console`, `evalScript` / `load` / `print`, Java interop (`Java.type` / `ArrayList` / `HashMap`), `DiskFile` roundtrip |
-| TestLog | 5 | `com.killcoding.log`: `LoggerFactory.getLogger`, level state from `Logger.properties`, info/warn/error/mark/debug do not throw, `FileOut` writes `logs/app/<yyyyMMdd>.log`, `setLevel("DEBUG")` flips `isDebugEnabled` |
-| LoadTest | 6 | Sustained load against `com.killcoding.log`: 10 000-line burst throughput (caller must not block), zero line loss after async flush, 8 KB payload integrity, 200 throwables, 5 loggers × 1000 interleaved lines, level filtering under load. Runs **last** so its ~16.5k lines cannot disturb the suites above |
+| TestLog | 6 | `com.killcoding.log`: `LoggerFactory.getLogger`, level state from `Logger.properties`, info/warn/error/mark/debug do not throw, `FileOut` writes `logs/app/<yyyyMMdd>.log`, `setLevel("DEBUG")` flips `isDebugEnabled`, DatabaseOut persists the marker rows (dbVerify) |
+| LoadTest | 7 | Sustained load against `com.killcoding.log`: 10 000-line burst throughput (caller must not block), zero line loss after async flush, 8 KB payload integrity, 200 throwables, 5 loggers × 1000 interleaved lines, level filtering under load, rows persisted in `app_logger_msg` (dbVerify). Runs **last** so its ~16.5k lines cannot disturb the suites above |
 
 > Removed because they exercise engine packages this replacement layer does not ship: `TestDatasource.js` (false positive — a scope note that always passed, Clock getters only), `TestCache.js` (`com.killcoding.cache`), `TestFile.js` (`com.killcoding.file`), `TestTool.js` (`com.killcoding.tool`). Their reports were deleted with them.
 
@@ -132,11 +132,11 @@ Before any suite runs, `TestAll.bat` / `TestAll.sh` clean `JsPlus\.tmp` (the `ev
 
 | Suite | Cases | Focus |
 | --- | --- | --- |
-| TestSlf4j | 7 | `org.slf4j`: `getName()`, `isXEnabled()` vs the configured level, all 25 Marker overloads + 5 `isXEnabled(Marker)`, Marker → `"<marker> - "` prefix, `{}` expansion, Throwable persistence, `trace()` → `MARK` |
+| TestSlf4j | 17 | `org.slf4j` (2.0.20): `getName()`, `isXEnabled()` vs the configured level, all 25 Marker overloads + 5 `isXEnabled(Marker)`, Marker → `"<marker> - "` prefix, `{}` expansion, Throwable persistence, `trace()` → `MARK`, the fluent 2.0 surface (`atInfo()` / `atError()` + `setCause`, marker + key-value prefixes, disabled-level NOOP gate, `atLevel(Level)` / `isEnabledForLevel(Level)`, `getILoggerFactory()` / `makeLoggingEventBuilder`), and `app_logger_config` remote-level (`level=DEBUG` → probe + sink, update to `WARN` → filtering, restore to `INFO`, row kept) |
 | TestCommonsLogging | 5 | `org.apache.commons.logging`: `getLog()`, `fatal()` → `ERROR`, `fatal(Object, Throwable)` keeps the cause, `isFatalEnabled()` == `isErrorEnabled()`, the five shared levels |
 | TestJuli | 4 | `org.apache.juli.logging`: `getLog()` → `LogCustom`, all 18 official methods accepted, `info()` reaches the sink, `fatal()` → `ERROR` |
 | TestLog4j | 6 | `org.apache.log4j` (1.2): `getName()`, debug filtered at `Level=INFO`, `setLevel(DEBUG)` then debug reaches the sink (level restored), `fatal()` → `ERROR`, `log(Priority, ...)` maps the priority, `l7dlog` / appender bookkeeping are safe no-ops |
-| TestLog4j2 | 7 | `org.apache.logging.log4j` (2.20): `getName()`, `atInfo().withMarker().withThrowable().log()` carries both attachments, `fatal()` → `ERROR`, `printf()` expands, `trace()` → `MARK`, `throwing(T)` returns the instance, `Level` order/range/`forName` + `isXEnabled(Marker)` agreement |
+| TestLog4j2 | 8 | `org.apache.logging.log4j` (2.20): `getName()`, `atInfo().withMarker().withThrowable().log()` carries both attachments, `fatal()` → `ERROR`, `printf()` expands, `trace()` → `MARK`, `throwing(T)` returns the instance, `Level` order/range/`forName` + `isXEnabled(Marker)` agreement, rows persisted in `app_logger_msg` (dbVerify) |
 
 ### Mandatory test conventions
 

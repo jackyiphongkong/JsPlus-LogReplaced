@@ -14,7 +14,7 @@ JsPlus-LogReplaced 是 **JsPlus 的日誌替換層**——為五種日誌門面�
 | 2. 測試 | `test\TestAll.bat`（Linux/macOS：`test\TestAll.sh`） | `docs/latest/report\*`（HTML / MD / CI 摘要），每次執行歸檔至 `docs/reports\<version>.jar` |
 | 3. 精簡執行環境 | `packJdk.bat`（Linux/macOS：`packJdk.sh`） | `Java\runtime`（jlink 裁減） |
 
-基線：`ant build` → BUILD SUCCESSFUL；`TestAll.bat` → **57 passed / 0 failed，exit 0**（8 個 JS 套件：2 個引擎側——TestConsole（測試環境前置）與 TestLog（`com.killcoding.log`）——加 5 個替換層廠商套件 TestSlf4j / TestCommonsLogging / TestJuli / TestLog4j / TestLog4j2，再加持續負載套件 LoadTest）。`test\TestFacades.bat` 單獨跑 5 個廠商套件（**34/34，exit 0**），作為專用的門面閘門；`test\LoadTest.bat` 單獨跑負載套件（**7/7，exit 0**）。
+基線：`ant build` → BUILD SUCCESSFUL；`TestAll.bat` → **65 passed / 0 failed，exit 0**（8 個 JS 套件：2 個引擎側——TestConsole（測試環境前置）與 TestLog（`com.killcoding.log`）——加 5 個替換層廠商套件 TestSlf4j / TestCommonsLogging / TestJuli / TestLog4j / TestLog4j2，再加持續負載套件 LoadTest）。`test\TestFacades.bat` 單獨跑 5 個廠商套件（**43/43，exit 0**），作為專用的門面閘門；`test\LoadTest.bat` 單獨跑負載套件（**7/7，exit 0**）。
 
 ## 工程標準（對齊 JsPlus-Core）
 
@@ -91,11 +91,11 @@ JsPlus-LogReplaced 是 **JsPlus 的日誌替換層**——為五種日誌門面�
 
 | 檢查 | 指令 | 最近結果 |
 | --- | --- | --- |
-| 逐方法比對五個官方 API jar | `python build/iface-audit/compare.py` | 五家族全部 0 缺失（61/81、18/84、18/18、55/122、384/424） |
+| 逐方法比對五個官方 API jar | `python build/iface-audit/compare.py` | 五家族全部 0 缺失（69/89、18/92、18/18、55/122、384/424） |
 | 同一份官方 API 樣例雙向編譯 | `test\iface\refapi\CompileApiSample.bat` | `ApiUsageSample.java` 對官方 jar 與對 `jsplus-logreplaced` 均編譯通過 |
-| 五門面執行期冒煙 | `test\TestFacades.bat` | 5 個廠商套件共 34/34（8 + 6 + 5 + 7 + 8），exit 0——每個門面呼叫都落到 `logs/app/<yyyyMMdd>.log` |
+| 五門面執行期冒煙 | `test\TestFacades.bat` | 5 個廠商套件共 43/43（17 + 6 + 5 + 7 + 8），exit 0——每個門面呼叫都落到 `logs/app/<yyyyMMdd>.log` |
 
-對照 jar 置於 `build/iface-audit/ref/`（slf4j-api 1.7.36、commons-logging 1.2、tomcat-juli 9.0.85、log4j 1.2.17、log4j-api 2.20.0）；方案與決策記錄見 `INTERFACE-PLAN.md`。替換層不可與官方日誌 jar 同 classpath 共存（套件同名）。
+對照 jar 置於 `build/iface-audit/ref/`（slf4j-api 2.0.20——1.7.36 jar 保留於 ref/ 作歷史、commons-logging 1.2、tomcat-juli 9.0.85、log4j 1.2.17、log4j-api 2.20.0）；方案與決策記錄見 `INTERFACE-PLAN.md`。替換層不可與官方日誌 jar 同 classpath 共存（套件同名），因此 org.slf4j 家族整體升級（1.7.36 → 2.0.20）而非並排保留。
 
 ## 測試套件
 
@@ -109,22 +109,22 @@ JsPlus-LogReplaced 是 **JsPlus 的日誌替換層**——為五種日誌門面�
 | --- | --- |
 | 全量：8 個套件 + 彙總報告 | `test\TestAll.bat`（Linux/macOS：`test\TestAll.sh`） |
 | 只跑 5 個廠商套件（退出碼可作 CI 閘門） | `test\TestFacades.bat`（Linux/macOS：`test\TestFacades.sh`） |
-| 只跑負載套件（6 個負載用例，退出碼可作 CI 閘門） | `test\LoadTest.bat`（Linux/macOS：`test\LoadTest.sh`） |
+| 只跑負載套件（7 個用例：6 個負載 + 落庫驗證，退出碼可作 CI 閘門） | `test\LoadTest.bat`（Linux/macOS：`test\LoadTest.sh`） |
 | 單一廠商套件 | `TestFacades.bat` 內含五個獨立主控台；只跑一個時沿用同一啟動行，改 `-Task test/TestLog4j.js` 等 |
 | 雙向編譯合規樣例 | `test\iface\refapi\CompileApiSample.bat` |
 | 任一套件 | 從 `TestAll.bat` 複製 `-Task test/TestXxx.js` 那一行；每個套件都是普通主控台任務，可獨立執行 |
 
 報告寫入 `docs/latest/report\`（HTML + MD + CI 摘要），並於每次執行後歸檔至 `docs/reports\<version>.jar`——版本取自專案 jar 檔名，保留最新 10 個，歸檔失敗僅 WARN、不影響退出碼（與 JsPlus-Core 同一佈局）。
 
-任何套件開跑前，`TestAll.bat` / `TestAll.sh` 會先清理 `JsPlus\.tmp`（`evalJavaSource` / `evalJavaFile` 的暫存樹，同 JsPlus-Core Step 0b）與 `logs\*`（引擎輸出樹 `logs\app\<yyyyMMdd>.log`）。因此每輪都從空日誌開始，套件只會看到本輪寫入的行——上一輪遺留的行不可能再造成誤判通過。
+任何套件開跑前，`TestAll.bat` / `TestAll.sh` 會先清理 `JsPlus\.tmp`（`evalJavaSource` / `evalJavaFile` 的暫存樹，同 JsPlus-Core Step 0b）。引擎輸出樹（`logs\app\<yyyyMMdd>.log`）**予以保留**——測試數據永不刪除：每個套件都以每輪唯一 token（`System.nanoTime`）標記其行，因此斷言只會命中本輪寫入的行，上一輪遺留的行不可能再造成誤判通過。
 
 ### 套件
 
 | 套件 | 用例數 | 關注點 |
 | --- | --- | --- |
 | TestConsole | 9 | 其他套件依賴的主控台環境：`JS_PLUS_PATH`、全域 `Console`、`evalScript` / `load` / `print`、Java 互操作（`Java.type` / `ArrayList` / `HashMap`）、`DiskFile` 讀寫往返 |
-| TestLog | 5 | `com.killcoding.log`：`LoggerFactory.getLogger`、由 `Logger.properties` 取得的級別狀態、info/warn/error/mark/debug 不拋例外、`FileOut` 寫入 `logs/app/<yyyyMMdd>.log`、`setLevel("DEBUG")` 切換 `isDebugEnabled` |
-| LoadTest | 6 | 對 `com.killcoding.log` 的持續負載：10000 行突發吞吐（呼叫方不得被 I/O 阻塞）、異步 flush 後零丟行、8 KB 訊息完整性、200 個異常、5 個 logger × 1000 行交錯、負載下的級別過濾。排在**最後**執行，其約 16500 行不會干擾上游套件 |
+| TestLog | 6 | `com.killcoding.log`：`LoggerFactory.getLogger`、由 `Logger.properties` 取得的級別狀態、info/warn/error/mark/debug 不拋例外、`FileOut` 寫入 `logs/app/<yyyyMMdd>.log`、`setLevel("DEBUG")` 切換 `isDebugEnabled`、DatabaseOut 將標記行寫入資料庫（dbVerify） |
+| LoadTest | 7 | 對 `com.killcoding.log` 的持續負載：10000 行突發吞吐（呼叫方不得被 I/O 阻塞）、異步 flush 後零丟行、8 KB 訊息完整性、200 個異常、5 個 logger × 1000 行交錯、負載下的級別過濾、行寫入 `app_logger_msg`（dbVerify）。排在**最後**執行，其約 16500 行不會干擾上游套件 |
 
 > 已移除（它們測的是本替換層不發佈的引擎套件）：`TestDatasource.js`（假陽性——範圍註記恆為通過、只驗 Clock getter）、`TestCache.js`（`com.killcoding.cache`）、`TestFile.js`（`com.killcoding.file`）、`TestTool.js`（`com.killcoding.tool`）。對應報告已一併刪除。
 
@@ -132,11 +132,11 @@ JsPlus-LogReplaced 是 **JsPlus 的日誌替換層**——為五種日誌門面�
 
 | 套件 | 用例數 | 關注點 |
 | --- | --- | --- |
-| TestSlf4j | 7 | `org.slf4j`：`getName()`、`isXEnabled()` 與設定級別一致、25 個 Marker 重載 + 5 個 `isXEnabled(Marker)`、Marker → `"<marker> - "` 前綴、`{}` 展開、Throwable 落盤、`trace()` → `MARK` |
+| TestSlf4j | 17 | `org.slf4j`（2.0.20）：`getName()`、`isXEnabled()` 與設定級別一致、25 個 Marker 重載 + 5 個 `isXEnabled(Marker)`、Marker → `"<marker> - "` 前綴、`{}` 展開、Throwable 落盤、`trace()` → `MARK`、流式 2.0 表面（`atInfo()` / `atError()` + `setCause`、marker 與 key-value 前綴、停用級別 NOOP 閘門、`atLevel(Level)` / `isEnabledForLevel(Level)`、`getILoggerFactory()` / `makeLoggingEventBuilder`），以及 `app_logger_config` 遠端級別（`level=DEBUG` → 探測與落盤、更新 `WARN` → 過濾、還原 `INFO`，資料行保留） |
 | TestCommonsLogging | 5 | `org.apache.commons.logging`：`getLog()`、`fatal()` → `ERROR`、`fatal(Object, Throwable)` 保留原因、`isFatalEnabled()` == `isErrorEnabled()`、五個共用級別 |
 | TestJuli | 4 | `org.apache.juli.logging`：`getLog()` → `LogCustom`、18 個官方方法全部可呼叫、`info()` 落盤、`fatal()` → `ERROR` |
 | TestLog4j | 6 | `org.apache.log4j`（1.2）：`getName()`、`Level=INFO` 下 debug 被過濾、`setLevel(DEBUG)` 後 debug 落盤（並還原級別）、`fatal()` → `ERROR`、`log(Priority, ...)` 映射級別、`l7dlog` / appender 僅記錄為安全 no-op |
-| TestLog4j2 | 7 | `org.apache.logging.log4j`（2.20）：`getName()`、`atInfo().withMarker().withThrowable().log()` 同時帶標記與異常、`fatal()` → `ERROR`、`printf()` 展開、`trace()` → `MARK`、`throwing(T)` 回傳同一實例、`Level` 序／範圍／`forName` 與 `isXEnabled(Marker)` 一致 |
+| TestLog4j2 | 8 | `org.apache.logging.log4j`（2.20）：`getName()`、`atInfo().withMarker().withThrowable().log()` 同時帶標記與異常、`fatal()` → `ERROR`、`printf()` 展開、`trace()` → `MARK`、`throwing(T)` 回傳同一實例、`Level` 序／範圍／`forName` 與 `isXEnabled(Marker)` 一致、行寫入 `app_logger_msg`（dbVerify） |
 
 ### 強制測試約定
 

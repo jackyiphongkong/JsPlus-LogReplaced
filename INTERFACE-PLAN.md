@@ -25,7 +25,7 @@
 
 - 工具：`build/iface-audit/compare.py`（javap 提取官方 jar 與我方 jar 的方法簽名，按 `name(params)` 歸一化後求差集）
 - 官方基準 jar（`build/iface-audit/ref/`）：
-  - `slf4j-api-1.7.36.jar`
+  - `slf4j-api-2.0.20.jar`（1.7.36 jar 保留於同目錄作歷史基準）
   - `commons-logging-1.2.jar`
   - `tomcat-juli-9.0.85.jar`
   - `log4j-1.2.17.jar`
@@ -206,7 +206,7 @@ boolean isFatalEnabled();
 | 風險 | 說明 | 緩解 |
 | --- | --- | --- |
 | 類衝突 | classpath 若同時有官方 jar（slf4j-api / log4j-api…）→ duplicate class，行為不可預測 | 項目文檔明示「不可與官方 jar 共存」；CI 檢查 LibHome 不含官方 logger jar |
-| 版本漂移 | slf4j 2.x、log4j2 2.x 後期版本的接口有增減 | 審計基準固定版本（1.7.36 / 2.20.0），升級時重跑 `compare.py` |
+| 版本漂移 | slf4j 2.x、log4j2 2.x 後期版本的接口有增減 | 審計基準固定版本（2.0.20 / 2.20.0），升級時重跑 `compare.py` |
 | 語義降級被誤用 | Marker 不進過濾、Appender no-op、Supplier 立即求值 | 在 README/QUALITY-REVIEW 明示降級清單；測試覆蓋降級行為 |
 | javadoc 體量 | log4j2 384 方法 + 多類型，javadoc 生成耗時增加 | javadoc 已有 `-Djavadoc.skip` 開關 |
 | 生成器可維護性 | 生成代碼不利於手改 | 生成器 + 模板入庫，生成結果不入庫（或入庫但標註 generated） |

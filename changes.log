@@ -97,3 +97,44 @@
   - Left untouched on purpose: README's architecture and interface-coverage chapters, QUALITY-REVIEW's round-2/round-3 narrative and scores, INTERFACE-PLAN's decision log and deviation notes - those record what was true at the time and rewriting their numbers would falsify the history
   - Verification: each replacement in the migration scripts is asserted to match exactly once (mismatches are logged as `!!`); build/md_update.txt and build/md_update2.txt carry no warning lines; a `CLOB` grep across `*.md` returns 0 hits; the baseline paragraphs, the TestFacades smoke row and QUALITY-REVIEW's P0 and verification sections were read back
 - test\TestFacades.bat was re-run to obtain the measured figure: 8+6+5+7+8 = 34 passed / 0 failed with exit 0, which is where the new baseline number comes from; the five vendor suite reports under docs/latest/report/ were refreshed by that run
+
+## 6.1.31 (2026.10.30 21:37:46)
+- found diffed: org/apache/logging/log4j/LogBuilder.java (M)
+- found diffed: org/apache/logging/log4j/LoggerClass.java (M)
+- found diffed: org/slf4j/ILoggerFactory.java (A)
+- found diffed: org/slf4j/Logger.java (M)
+- found diffed: org/slf4j/LoggerClass.java (M)
+- found diffed: org/slf4j/LoggerFactory.java (M)
+- found diffed: org/slf4j/event/Level.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilder.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilderClass.java (A)
+- SLF4J facade upgraded from slf4j-api 1.7.36 to 2.0.20 (the org.slf4j package collision means one API version ships per jar). org.slf4j.Logger now declares all 69 methods of the 2.0.20 interface - the previous 61 plus the five fluent atTrace()/atDebug()/atInfo()/atWarn()/atError() entry points, the makeLoggingEventBuilder(Level)/atLevel(Level)/isEnabledForLevel(Level) defaults and the ROOT_LOGGER_NAME constant; the 20 JsPlus extension overloads are kept
+- New companion types for the 2.0 surface: org.slf4j.event.Level (enum with the official int values 40/30/20/10/0), org.slf4j.spi.LoggingEventBuilder plus its JsPlus implementation LoggingEventBuilderClass, org.slf4j.ILoggerFactory, and LoggerFactory.getILoggerFactory(). Behaviour: markers prefix the message ("<name> - ", decision D3), key-value pairs prefix "key=value " (official builder rendering), {} placeholders are expanded eagerly, suppliers are evaluated eagerly, and atX()/atLevel(Level) on a disabled level return the inert NOOP singleton that writes nothing (mirroring the official NOPLoggingEventBuilder)
+- Architecture: org.apache.logging.log4j.LogBuilder now extends org.slf4j.spi.LoggingEventBuilder so the log4j2 Logger interface (which extends org.slf4j.Logger) can declare atInfo() and friends covariantly. build/tools/genLog4j2.py regenerates SimpleLogBuilder with the inherited fluent methods (setMessage/addArgument/addKeyValue/addMarker(org.slf4j.Marker)/setCause/log(Supplier<String>)) writing through the same engine; LogBuilder.NoopLogBuilder implements them inertly
+- Audit gate: build/iface-audit/compare.py FAMILIES now audits org.slf4j.Logger against build/iface-audit/ref/slf4j-api-2.0.20.jar (the 1.7.36 jar stays in ref/ as history). javap verification: 0 missing official methods
+- Interface gate: test/iface/refapi added (the README-declared dual-compile sample was missing from the checkout). ApiUsageSample.java exercises all five families including the SLF4J 2.0 fluent API; CompileApiSample.bat/.sh compile it against the official reference jars and against the replacement jar (BOTH COMPILES OK)
+- Tests: TestSlf4j gained six 2.0 cases (fluent atInfo message+args, marker+key-value prefixes, atError+setCause, disabled-level NOOP gate, atLevel/isEnabledForLevel, getILoggerFactory+makeLoggingEventBuilder), 8 -> 14 cases; final TestFacades/TestAll counts appended after the run
+## 6.1.32 (2026.10.30 22:11:26)
+- found diffed: org/apache/logging/log4j/LogBuilder.java (M)
+- found diffed: org/apache/logging/log4j/LoggerClass.java (M)
+- found diffed: org/slf4j/ILoggerFactory.java (A)
+- found diffed: org/slf4j/Logger.java (M)
+- found diffed: org/slf4j/LoggerClass.java (M)
+- found diffed: org/slf4j/LoggerFactory.java (M)
+- found diffed: org/slf4j/event/Level.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilder.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilderClass.java (A)
+- Build incident (6.1.31 superseded by 6.1.32): the first SLF4J2 build regressed TestLog4j2 with a StackOverflowError. genLog4j2.py rewrote every "emit(level, marker, " in the SimpleLogBuilder template to "emit2(" - a blanket string replace that also rewrote the body of emit2 itself, turning it into infinite self-recursion (LoggerClass$SimpleLogBuilder.emit2 at LoggerClass.java:2292). Fixed by protecting the emit2 body from the rewrite: _tail() substitutes a placeholder for "emit(level, marker, slf4jMarkerPrefix + message, t);" before the rewrite and restores it afterwards, so the 22 fluent log() methods call emit2 and emit2 alone calls emit
+- Threshold semantics of the SLF4J 2.0 fluent gate fixed: the engine probes are exact-level (LEVEL == LEVEL_<X>) so only the configured level reports true. atX() and isEnabledForLevel(Level) originally relied on those probes, which made atWarn()/atError() return the NOOP builder under Level=INFO (fluent error cases wrote nothing) and isEnabledForLevel(WARN) report false. Both now derive the enabled threshold from whichever probe is on and compare with the official Level integers (ERROR=40, WARN=30, INFO=20, DEBUG=10, TRACE=0), matching the official threshold semantics: at Level=INFO, atInfo()/atWarn()/atError() build live events, atDebug()/atTrace() return NOOP
+- Verification: javap audit 0 missing official methods for every family; ApiUsageSample dual-compiles OK against the official jars and against the replacement jar; TestSlf4j 14/14 (six new 2.0 cases all pass); TestLog4j2 back to 8/8; full TestAll 63 passed / 0 failed (9/6/8/6/5/14/8/7)
+## 6.1.33 (2026.10.30 22:11:54)
+- found diffed: org/apache/logging/log4j/LogBuilder.java (M)
+- found diffed: org/apache/logging/log4j/LoggerClass.java (M)
+- found diffed: org/slf4j/ILoggerFactory.java (A)
+- found diffed: org/slf4j/Logger.java (M)
+- found diffed: org/slf4j/LoggerClass.java (M)
+- found diffed: org/slf4j/LoggerFactory.java (M)
+- found diffed: org/slf4j/event/Level.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilder.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilderClass.java (A)
+- build: automatic version bump

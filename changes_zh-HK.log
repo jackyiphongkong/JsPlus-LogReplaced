@@ -97,3 +97,44 @@
   - 保留未動的部分：README 的架構與介面覆蓋章節、QUALITY-REVIEW 的「第二輪／第三輪」歷史敘述與評分、INTERFACE-PLAN 的決策日誌與偏離記錄——這些記錄的是當時的事實，改數字會讓歷史失真
   - 驗證：四份 md 的替換腳本逐條檢查命中次數（每處必須恰好 1 次，否則記 `!!`），`build/md_update.txt` 與 `build/md_update2.txt` 均無警告行；`Grep CLOB` 於 `*.md` 命中 0；兩版 README 的基線段、`TestFacades` 冒煙列與 `QUALITY-REVIEW` 的 P0／驗證段已回讀確認
 - 為取得實測值重跑 `test\TestFacades.bat`：8+6+5+7+8 = 34 passed / 0 failed、exit 0，作為基線數字的來源，同時刷新 `docs/latest/report/` 下五個廠商套件報告
+
+## 6.1.31 (2026.10.30 21:37:46)
+- found diffed: org/apache/logging/log4j/LogBuilder.java (M)
+- found diffed: org/apache/logging/log4j/LoggerClass.java (M)
+- found diffed: org/slf4j/ILoggerFactory.java (A)
+- found diffed: org/slf4j/Logger.java (M)
+- found diffed: org/slf4j/LoggerClass.java (M)
+- found diffed: org/slf4j/LoggerFactory.java (M)
+- found diffed: org/slf4j/event/Level.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilder.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilderClass.java (A)
+- SLF4J 門面由 slf4j-api 1.7.36 升級至 2.0.20（org.slf4j 套件名衝突，每個 jar 只能搭載一個 API 版本）。org.slf4j.Logger 現宣告 2.0.20 介面的全部 69 個方法——原有 61 個加上五個流式入口 atTrace()/atDebug()/atInfo()/atWarn()/atError()、makeLoggingEventBuilder(Level)/atLevel(Level)/isEnabledForLevel(Level) 預設方法與 ROOT_LOGGER_NAME 常數；原有 20 個 JsPlus 擴充多載保留
+- 新增 2.0 面的配套類型：org.slf4j.event.Level（列舉，官方整數值 40/30/20/10/0）、org.slf4j.spi.LoggingEventBuilder 及其實作 LoggingEventBuilderClass、org.slf4j.ILoggerFactory，以及 LoggerFactory.getILoggerFactory()。行為：marker 以訊息前綴呈現（「<name> - 」，決策 D3）、key-value 以「key=value 」前綴呈現（官方 builder 渲染）、{} 佔位符即時展開、supplier 即時求值，級別停用時 atX()/atLevel(Level) 回傳不寫任何日誌的 NOOP 單例（對應官方 NOPLoggingEventBuilder）
+- 架構：org.apache.logging.log4j.LogBuilder 改為繼承 org.slf4j.spi.LoggingEventBuilder，令 log4j2 Logger 介面（繼承自 org.slf4j.Logger）能以協變方式宣告 atInfo() 等；build/tools/genLog4j2.py 重新生成 SimpleLogBuilder，納入繼承而來的流式方法（setMessage/addArgument/addKeyValue/addMarker(org.slf4j.Marker)/setCause/log(Supplier<String>)），經同一引擎寫入；LogBuilder.NoopLogBuilder 以空操作實作
+- 審計門禁：build/iface-audit/compare.py 的 FAMILIES 改以 build/iface-audit/ref/slf4j-api-2.0.20.jar 審計 org.slf4j.Logger（1.7.36 jar 保留於 ref/ 作歷史）；javap 驗證 0 個缺失官方方法
+- 介面門禁：新增 test/iface/refapi（README 聲稱的雙編譯樣例原先並不存在於 checkout）。ApiUsageSample.java 覆蓋全部五個家族（含 SLF4J 2.0 流式 API）；CompileApiSample.bat/.sh 分別以官方基準 jar 與替換 jar 編譯（BOTH COMPILES OK）
+- 測試：TestSlf4j 新增六個 2.0 用例（流式 atInfo 訊息+參數、marker+key-value 前綴、atError+setCause、停用級別 NOOP 門禁、atLevel/isEnabledForLevel、getILoggerFactory+makeLoggingEventBuilder），8 → 14 個用例；TestFacades / TestAll 最終計數於執行後補上
+## 6.1.32 (2026.10.30 22:11:26)
+- found diffed: org/apache/logging/log4j/LogBuilder.java (M)
+- found diffed: org/apache/logging/log4j/LoggerClass.java (M)
+- found diffed: org/slf4j/ILoggerFactory.java (A)
+- found diffed: org/slf4j/Logger.java (M)
+- found diffed: org/slf4j/LoggerClass.java (M)
+- found diffed: org/slf4j/LoggerFactory.java (M)
+- found diffed: org/slf4j/event/Level.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilder.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilderClass.java (A)
+- 構建事故（6.1.31 由 6.1.32 取代）：首個 SLF4J2 構建令 TestLog4j2 以 StackOverflowError 失敗。genLog4j2.py 把 SimpleLogBuilder 模板中所有「emit(level, marker, 」改寫為「emit2(」——這是一次不分對象的整串替換，連 emit2 自身的方法體也被改寫，變成無限自遞迴（LoggerClass$SimpleLogBuilder.emit2 at LoggerClass.java:2292）。已修正：_tail() 在改寫前先把 emit2 方法體「emit(level, marker, slf4jMarkerPrefix + message, t);」換成佔位符，改寫完再還原，因此 22 個流式 log() 方法呼叫 emit2，而 emit2 獨自呼叫 emit
+- 修正 SLF4J 2.0 流式門禁的門檻語義：引擎探測為精確級別比對（LEVEL == LEVEL_<X>），只有設定中的級別回傳 true。atX() 與 isEnabledForLevel(Level) 原本直接依賴這些探測，導致 Level=INFO 下 atWarn()/atError() 回傳 NOOP builder（流式 error 不寫任何日誌）、isEnabledForLevel(WARN) 回傳 false。兩者現改為：由開啟中的探測推導出啟用門檻，再與官方 Level 整數（ERROR=40, WARN=30, INFO=20, DEBUG=10, TRACE=0）比較，符合官方門檻語義：Level=INFO 下 atInfo()/atWarn()/atError() 建構真實事件，atDebug()/atTrace() 回傳 NOOP
+- 驗證：javap 審計各家族 0 個缺失官方方法；ApiUsageSample 分別以官方 jar 與替換 jar 雙編譯 OK；TestSlf4j 14/14（六個新 2.0 用例全過）；TestLog4j2 回復 8/8；完整 TestAll 63 passed / 0 failed（9/6/8/6/5/14/8/7）
+## 6.1.33 (2026.10.30 22:11:54)
+- found diffed: org/apache/logging/log4j/LogBuilder.java (M)
+- found diffed: org/apache/logging/log4j/LoggerClass.java (M)
+- found diffed: org/slf4j/ILoggerFactory.java (A)
+- found diffed: org/slf4j/Logger.java (M)
+- found diffed: org/slf4j/LoggerClass.java (M)
+- found diffed: org/slf4j/LoggerFactory.java (M)
+- found diffed: org/slf4j/event/Level.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilder.java (A)
+- found diffed: org/slf4j/spi/LoggingEventBuilderClass.java (A)
+- build: 自動版本遞增

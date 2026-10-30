@@ -5,15 +5,27 @@
 //            Console.eval(<PROJECT_ROOT>/test/TestSlf4j.js)
 // Harness  : TestBase.js (shared counters / check() / HTML+MD reports)
 // Output   : <PROJECT_ROOT>/docs/latest/report/TestSlf4j-Report.html / .md
-// Coverage : the SLF4J 1.7 surface of the replacement layer, asserted against
-//            the real sink (<PROJECT_ROOT>/logs/app/<yyyyMMdd>.log):
-//              S1 getLogger(name) + getName()
-//              S2 isXEnabled() follows the runtime config (Level=INFO)
-//              S3 all Marker overloads + isXEnabled(Marker) are accepted
-//              S4 Marker becomes the message prefix "<marker> - "
-//              S5 "{}" placeholders are expanded with the arguments
-//              S6 Throwable is rendered next to the message
-//              S7 trace() lands on the engine MARK level
+// Coverage : the SLF4J 2.0 surface (aligned with slf4j-api 2.0.20) of the
+//            replacement layer, asserted against the real sink
+//            (<PROJECT_ROOT>/logs/app/<yyyyMMdd>.log):
+//              S1  getLogger(name) + getName()
+//              S2  isXEnabled() follows the runtime config (Level=INFO)
+//              S3  all Marker overloads + isXEnabled(Marker) are accepted
+//              S4  Marker becomes the message prefix "<marker> - "
+//              S5  "{}" placeholders are expanded with the arguments
+//              S6  Throwable is rendered next to the message
+//              S7  trace() lands on the engine MARK level
+//              S8  rows persisted in app_logger_msg (dbVerify)
+//              S9  fluent atInfo() builder writes one event (message + args)
+//              S10 fluent marker + key-value prefixes render in order
+//              S11 fluent atError() + setCause renders the exception
+//              S12 atX() on a disabled level returns the inert NOOP builder
+//              S13 atLevel(Level) + isEnabledForLevel(Level) work
+//              S14 getILoggerFactory() + makeLoggingEventBuilder(Level)
+//              S15 app_logger_config remote level is applied: INSERT/UPDATE
+//                  the per-host row and verify the probes flip and the real
+//                  sink follows (DEBUG -> WARN -> restore INFO; the row is
+//                  kept, test data is never deleted - project rule)
 // Exit     : 0 when every case passed, 1 otherwise (CI can gate on it).
 // ============================================================================
 
@@ -206,6 +218,249 @@ check({
     objectiveZh: "驗證已記錄的映射：slf4j trace → JsPlus MARK（引擎無 TRACE 級別）",
     command: "log.trace(message) -> app log line starting with \"MARK \""
 });
+
+// Case S9
+// SLF4J 2.0 fluent API: atInfo() returns a LoggingEventBuilder whose
+// setMessage(...) + addArgument(...) + log() writes exactly one event.
+var fluentTag = "S9 " + tag + " fluent";
+log.atInfo().addArgument("ARG9").setMessage(fluentTag + " {}").log();
+var line9 = appLogLine(fluentTag, null);
+check({
+    name: "slf4j2 fluent atInfo() builder writes one event (message + args)",
+    ok: line9 !== null && line9.indexOf(fluentTag) >= 0 && line9.indexOf("ARG9") >= 0,
+    detail: line9 === null ? "no log line for S9 after 6s" : ("line=" + line9),
+    objective: "Verify the SLF4J 2.0 fluent atInfo() -> setMessage/addArgument/log() routes one event to the engine",
+    objectiveZh: "驗證 SLF4J 2.0 流式 atInfo() → setMessage/addArgument/log() 將一個事件寫入引擎",
+    command: "log.atInfo().addArgument(\"ARG9\").setMessage(\"S9 ... {}\").log()"
+});
+
+// Case S10
+// Fluent markers (rendered "<name> - ", decision D3) and key-value pairs
+// (rendered "key=value ", official builder semantics) both prefix the message.
+var m10 = Slf4jMarkerFactory.getMarker("MK-" + tag);
+var kvTag = "S10 " + tag + " kv";
+log.atInfo().addMarker(m10).addKeyValue("k1", "v1").addKeyValue("k2", 2).setMessage(kvTag).log();
+var line10 = appLogLine(kvTag, null);
+var kvExpect = "k1=v1 k2=2 ";
+check({
+    name: "slf4j2 fluent marker and key-value prefixes render in order",
+    ok: line10 !== null && line10.indexOf("MK-" + tag + " - ") >= 0 && line10.indexOf(kvExpect) >= 0,
+    detail: line10 === null ? "no log line for S10 after 6s" : ("line=" + line10),
+    objective: "Verify addMarker/addKeyValue render as the documented prefixes before the message",
+    objectiveZh: "驗證 addMarker/addKeyValue 依記錄的前綴規則呈現在訊息之前",
+    command: "log.atInfo().addMarker(m).addKeyValue(\"k1\",\"v1\").addKeyValue(\"k2\",2).setMessage(msg).log()"
+});
+
+// Case S11
+// Fluent error with an explicit cause: setCause(Throwable) then log().
+var cause11 = tag + "-fluent-cause";
+log.atError().setCause(new RuntimeException(cause11)).setMessage("S11 " + tag + " fluent cause").log();
+var s11found = appLogContains(cause11);
+check({
+    name: "slf4j2 fluent atError() + setCause renders the exception",
+    ok: s11found,
+    detail: s11found ? cause11 + " found in app log" : cause11 + " not found after 6s",
+    objective: "Verify the fluent builder's cause is written next to the message",
+    objectiveZh: "驗證流式 builder 的 cause 與訊息一同寫入日誌",
+    command: "log.atError().setCause(new RuntimeException(cause)).setMessage(msg).log()"
+});
+
+// Case S12
+// Disabled-level gate: isDebugEnabled() == false (Level=INFO), so atDebug()
+// and atTrace() must return the inert NOOP builder that logs nothing.
+var gatedText = "S12 " + tag + " gated";
+var gatedText2 = "S12b " + tag + " gated";
+log.atDebug().setMessage(gatedText).log();
+log.atTrace().setMessage(gatedText2).log();
+Thread.sleep(2500);
+var gatedPath = basePath + "../logs/app/" + LogRecord.getLogFileName();
+var gatedContent = "";
+var gatedFile = new DiskFile(gatedPath);
+if (gatedFile.exists()) {
+    gatedContent = "" + JsString.valueOf(gatedFile.readAllString("UTF-8"));
+}
+check({
+    name: "slf4j2 atX() on a disabled level returns the inert NOOP builder",
+    ok: gatedContent.indexOf(gatedText) < 0 && gatedContent.indexOf(gatedText2) < 0,
+    detail: "isDebugEnabled=" + log.isDebugEnabled() + " (config Level=INFO), gated text absent from app log",
+    objective: "Verify atDebug()/atTrace() build nothing when the level is disabled",
+    objectiveZh: "驗證 atDebug()/atTrace() 在級別停用時不產生任何日誌",
+    command: "log.atDebug().setMessage(gated).log() -> nothing written"
+});
+
+// Case S13
+// atLevel(Level) and isEnabledForLevel(Level) - the new 2.0 entry points.
+var Slf4jEventLevel = Java.type("org.slf4j.event.Level");
+var s13warn = log.isEnabledForLevel(Slf4jEventLevel.WARN);
+var s13debug = log.isEnabledForLevel(Slf4jEventLevel.DEBUG);
+var s13Tag = "S13 " + tag + " atLevel";
+log.atLevel(Slf4jEventLevel.WARN).setMessage(s13Tag).log();
+var line13 = appLogLine(s13Tag, "WARN ");
+check({
+    name: "slf4j2 atLevel(Level) + isEnabledForLevel(Level) work",
+    ok: s13warn === true && s13debug === false && line13 !== null,
+    detail: "isEnabledForLevel(WARN)=" + s13warn + ", isEnabledForLevel(DEBUG)=" + s13debug
+        + ", atLevel(WARN) line=" + (line13 === null ? "null" : line13),
+    objective: "Verify the 2.0 atLevel(Level)/isEnabledForLevel(Level) entry points route like the level overloads",
+    objectiveZh: "驗證 2.0 的 atLevel(Level)/isEnabledForLevel(Level) 入口與級別方法一致",
+    command: "log.atLevel(Level.WARN).setMessage(msg).log(); log.isEnabledForLevel(Level.DEBUG)"
+});
+
+// Case S14
+// LoggerFactory.getILoggerFactory() and makeLoggingEventBuilder(Level) -
+// the 2.0 entry-class surface.
+var s14Logger = Slf4jLoggerFactory.getILoggerFactory().getLogger("test.replacement.slf4j.i");
+var s14Name = "" + s14Logger.getName();
+var s14Tag = "S14 " + tag + " make";
+s14Logger.makeLoggingEventBuilder(Slf4jEventLevel.INFO).setMessage(s14Tag).log();
+var line14 = appLogLine(s14Tag, null);
+check({
+    name: "slf4j2 getILoggerFactory() + makeLoggingEventBuilder(Level) work",
+    ok: s14Name === "test.replacement.slf4j.i" && line14 !== null && line14.indexOf(s14Tag) >= 0,
+    detail: "ILoggerFactory.getLogger name=" + s14Name + ", line=" + (line14 === null ? "null" : line14),
+    objective: "Verify getILoggerFactory().getLogger(String) and makeLoggingEventBuilder(Level) are usable",
+    objectiveZh: "驗證 getILoggerFactory().getLogger(String) 與 makeLoggingEventBuilder(Level) 可用",
+    command: "LoggerFactory.getILoggerFactory().getLogger(name).makeLoggingEventBuilder(Level.INFO).log()"
+});
+
+// Case S15
+// DatabaseOut remote config (app_logger_config): the engine re-reads
+// DatabaseOutConfigFrom at most every DatabaseOutRefreshConfigTimer (code
+// default 60000 ms) and applies the row's "level" through Logger.setLevel,
+// so writing (or updating) this per-host row must flip the probes and gate
+// the real sink. Sequence: level=DEBUG -> probe + debug reaches the sink,
+// update level=WARN -> warn lands / debug filtered, restore level=INFO so
+// the suites that follow keep their Level=INFO assumptions. The row itself
+// is kept: test data is never deleted (project rule).
+function dbUpdate(sql) {
+    var conn = null;
+    var stmt = null;
+    try {
+        conn = Console.getDataSource().getConnection();
+        stmt = conn.createStatement();
+        stmt.executeUpdate(sql);
+        return true;
+    } catch (e) {
+        print("[WARN] dbUpdate failed: " + sql + " -> " + e);
+        return false;
+    } finally {
+        if (stmt !== null && stmt !== undefined) { try { stmt.close(); } catch (e2) {} }
+        if (conn !== null && conn !== undefined) { try { conn.close(); } catch (e3) {} }
+    }
+}
+function dbScalar(sql) {
+    var conn = null;
+    var stmt = null;
+    var rs = null;
+    try {
+        conn = Console.getDataSource().getConnection();
+        stmt = conn.createStatement();
+        rs = stmt.executeQuery(sql);
+        if (rs.next()) {
+            var v = rs.getObject(1);
+            return v === null || v === undefined ? null : ("" + v);
+        }
+        return null;
+    } catch (e) {
+        print("[WARN] dbScalar failed: " + sql + " -> " + e);
+        return null;
+    } finally {
+        if (rs !== null && rs !== undefined) { try { rs.close(); } catch (e2) {} }
+        if (stmt !== null && stmt !== undefined) { try { stmt.close(); } catch (e3) {} }
+        if (conn !== null && conn !== undefined) { try { conn.close(); } catch (e4) {} }
+    }
+}
+function waitFor(pred, triesMs) {
+    // Poll until pred() is true or the window elapses. The remote-config
+    // refresh runs at most once per DatabaseOutRefreshConfigTimer (60 s), so
+    // the default window covers one full refresh plus flush slack.
+    var waited = 0;
+    while (waited < triesMs) {
+        if (pred()) {
+            return true;
+        }
+        Thread.sleep(500);
+        waited += 500;
+    }
+    return pred();
+}
+var s15Host = dbScalar("SELECT DISTINCT hostname FROM app_logger_msg WHERE hostname IS NOT NULL LIMIT 1");
+var s15CfgRow = null;
+var s15Detail = "";
+if (s15Host === null || s15Host === undefined || s15Host.length === 0) {
+    check({
+        name: "slf4j2 app_logger_config remote level is applied (S15)",
+        ok: false,
+        detail: "no hostname found in app_logger_msg - cannot address the per-host config row",
+        objective: "Verify a level written to app_logger_config is picked up and gates the sink",
+        objectiveZh: "驗證寫入 app_logger_config 的 level 會被引擎套用並管制輸出",
+        command: "INSERT/UPDATE app_logger_config (hostname, level) -> probes + sink"
+    });
+} else {
+    // Ensure exactly one active row exists for this host (idempotent across
+    // runs): reuse an existing active row or create a fresh one.
+    s15CfgRow = dbScalar("SELECT id FROM app_logger_config WHERE hostname = '" + s15Host + "' AND deleted = FALSE LIMIT 1");
+    if (s15CfgRow === null || s15CfgRow === undefined) {
+        s15CfgRow = ("s15" + System.nanoTime()).substring(0, 16);
+        dbUpdate("INSERT INTO app_logger_config (id, hostname, level, created_at, updated_at, deleted) VALUES ('"
+            + s15CfgRow + "', '" + s15Host + "', 'DEBUG', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE)");
+    } else {
+        dbUpdate("UPDATE app_logger_config SET level = 'DEBUG', updated_at = CURRENT_TIMESTAMP, deleted = FALSE "
+            + "WHERE hostname = '" + s15Host + "' AND deleted = FALSE");
+    }
+    // Phase A: level=DEBUG must be absorbed by the remote-config refresh.
+    var s15aProbe = waitFor(function () { return log.isDebugEnabled(); }, 70000);
+    var s15aLine = null;
+    if (s15aProbe) {
+        log.debug("S15 " + tag + " remote-debug");
+        s15aLine = appLogLine("S15 " + tag, "DEBUG ");
+    }
+    check({
+        name: "slf4j2 app_logger_config remote level DEBUG is applied (S15)",
+        ok: s15aProbe && s15aLine !== null,
+        detail: "isDebugEnabled=" + s15aProbe + ", debug line=" + (s15aLine === null ? "null" : "written")
+            + (s15aProbe ? "" : " (remote refresh not observed within 70s)"),
+        objective: "Verify a DEBUG level row in app_logger_config enables debug probing and writing",
+        objectiveZh: "驗證 app_logger_config 的 DEBUG 級別令 debug 探測與寫入均生效",
+        command: "INSERT app_logger_config(hostname,level='DEBUG') -> isDebugEnabled() && log.debug() reaches sink"
+    });
+    // Phase B: update to WARN -> warn lands, debug is filtered.
+    var s15bUpd = dbUpdate("UPDATE app_logger_config SET level = 'WARN', updated_at = CURRENT_TIMESTAMP "
+        + "WHERE hostname = '" + s15Host + "' AND deleted = FALSE");
+    var s15bProbe = waitFor(function () { return log.isWarnEnabled() && !log.isInfoEnabled() && !log.isDebugEnabled(); }, 70000);
+    var s15bLine = null;
+    var s15bLeak = false;
+    if (s15bProbe) {
+        log.warn("S15 " + tag + " remote-warn");
+        s15bLine = appLogLine("S15 " + tag, "WARN ");
+        log.debug("S15 " + tag + " remote-debug-filtered");
+        s15bLeak = appLogContains("S15 " + tag + " remote-debug-filtered", 6);
+    }
+    check({
+        name: "slf4j2 app_logger_config level update to WARN is applied (S15)",
+        ok: s15bUpd && s15bProbe && s15bLine !== null && !s15bLeak,
+        detail: "isWarnEnabled=" + s15bProbe + ", warn line=" + (s15bLine === null ? "null" : "written")
+            + ", debug leaked=" + s15bLeak + (s15bProbe ? "" : " (remote refresh not observed within 70s)"),
+        objective: "Verify updating the row's level to WARN re-gates probes and filtering",
+        objectiveZh: "驗證把 level 更新為 WARN 後探測與過濾即時跟隨",
+        command: "UPDATE app_logger_config SET level='WARN' -> isWarnEnabled() && debug filtered"
+    });
+    // Phase C (always): restore INFO so the suites that follow keep their
+    // Level=INFO assumptions. The row stays (never deleted).
+    dbUpdate("UPDATE app_logger_config SET level = 'INFO', updated_at = CURRENT_TIMESTAMP "
+        + "WHERE hostname = '" + s15Host + "' AND deleted = FALSE");
+    var s15cRestore = waitFor(function () { return log.isInfoEnabled() && !log.isWarnEnabled() && !log.isDebugEnabled(); }, 70000);
+    check({
+        name: "slf4j2 app_logger_config level restored to INFO (S15)",
+        ok: s15cRestore,
+        detail: "isInfoEnabled=" + s15cRestore + (s15cRestore ? "" : " (restore refresh not observed within 70s - later suites may be affected)"),
+        objective: "Verify the config row is restored to INFO (row kept, suites unaffected)",
+        objectiveZh: "驗證 level 已還原為 INFO（資料行保留，不影響後續套件）",
+        command: "UPDATE app_logger_config SET level='INFO' -> isInfoEnabled() restored"
+    });
+    s15Detail = "host=" + s15Host + ", cfgRow=" + s15CfgRow;
+    print("[S15] " + s15Detail);
+}
 
 // Case S8
 // dbVerify on the persisted state: the engine's DatabaseOut path writes these

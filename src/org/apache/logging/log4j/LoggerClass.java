@@ -2089,6 +2089,10 @@ public class LoggerClass extends org.slf4j.LoggerClass implements Logger {
         private final String level;
         private Marker marker;
         private Throwable throwable;
+        private String pendingMessage;
+        private final java.util.List<Object> pendingArguments = new java.util.ArrayList<Object>();
+        private final java.util.List<String[]> pendingKeyValues = new java.util.ArrayList<String[]>();
+        private String slf4jMarkerPrefix = "";
 
         SimpleLogBuilder(String level, Marker marker) {
             this.level = level;
@@ -2108,6 +2112,61 @@ public class LoggerClass extends org.slf4j.LoggerClass implements Logger {
         }
 
         @Override
+        public LogBuilder setCause(Throwable cause) {
+            this.throwable = cause;
+            return this;
+        }
+
+        @Override
+        public LogBuilder addMarker(org.slf4j.Marker slf4jMarker) {
+            if (slf4jMarker != null) {
+                slf4jMarkerPrefix += slf4jMarker.getName() + " - ";
+            }
+            return this;
+        }
+
+        @Override
+        public LogBuilder addArgument(Object p) {
+            this.pendingArguments.add(p);
+            return this;
+        }
+
+        @Override
+        public LogBuilder addArgument(java.util.function.Supplier<?> objectSupplier) {
+            this.pendingArguments.add(objectSupplier == null ? null : objectSupplier.get());
+            return this;
+        }
+
+        @Override
+        public LogBuilder addKeyValue(String key, Object value) {
+            this.pendingKeyValues.add(new String[] {key, text(value)});
+            return this;
+        }
+
+        @Override
+        public LogBuilder addKeyValue(String key, java.util.function.Supplier<Object> valueSupplier) {
+            this.pendingKeyValues.add(new String[] {key, text(valueSupplier == null ? null : valueSupplier.get())});
+            return this;
+        }
+
+        @Override
+        public LogBuilder setMessage(String message) {
+            this.pendingMessage = message;
+            return this;
+        }
+
+        @Override
+        public LogBuilder setMessage(java.util.function.Supplier<String> messageSupplier) {
+            this.pendingMessage = messageSupplier == null ? null : messageSupplier.get();
+            return this;
+        }
+
+        @Override
+        public void log(java.util.function.Supplier<String> messageSupplier) {
+            emit2(text(messageSupplier == null ? null : messageSupplier.get()), throwable);
+        }
+
+        @Override
         public LogBuilder withLocation() {
             return this;
         }
@@ -2119,99 +2178,118 @@ public class LoggerClass extends org.slf4j.LoggerClass implements Logger {
 
         @Override
         public void log(CharSequence message) {
-            emit(level, marker, text(message), throwable);
+            emit2(text(message), throwable);
         }
 
         @Override
         public void log(String message) {
-            emit(level, marker, text(message), throwable);
+            emit2(text(message), throwable);
         }
 
         @Override
         public void log(String message, Object... params) {
-            emit(level, marker, format(message, params), throwable);
+            emit2(format(message, params), throwable);
         }
 
         @Override
         public void log(String message, Supplier<?>... paramSuppliers) {
-            emit(level, marker, formatSuppliers(message, paramSuppliers), throwable);
+            emit2(formatSuppliers(message, paramSuppliers), throwable);
         }
 
         @Override
         public void log(Message message) {
-            emit(level, marker, messageText(message), throwable);
+            emit2(messageText(message), throwable);
         }
 
         @Override
         public void log(Supplier<Message> messageSupplier) {
-            emit(level, marker, messageText(messageSupplier == null ? null : messageSupplier.get()), throwable);
+            emit2(messageText(messageSupplier == null ? null : messageSupplier.get()), throwable);
         }
 
         @Override
         public Message logAndGet(Supplier<Message> messageSupplier) {
             Message message = messageSupplier == null ? null : messageSupplier.get();
-            emit(level, marker, messageText(message), throwable);
+            emit2(messageText(message), throwable);
             return message;
         }
 
         @Override
         public void log(Object message) {
-            emit(level, marker, text(message), throwable);
+            emit2(text(message), throwable);
         }
 
         @Override
         public void log(String message, Object p0) {
-            emit(level, marker, format(message, new Object[] {p0}), throwable);
+            emit2(format(message, new Object[] {p0}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1) {
-            emit(level, marker, format(message, new Object[] {p0, p1}), throwable);
+            emit2(format(message, new Object[] {p0, p1}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1, Object p2) {
-            emit(level, marker, format(message, new Object[] {p0, p1, p2}), throwable);
+            emit2(format(message, new Object[] {p0, p1, p2}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1, Object p2, Object p3) {
-            emit(level, marker, format(message, new Object[] {p0, p1, p2, p3}), throwable);
+            emit2(format(message, new Object[] {p0, p1, p2, p3}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1, Object p2, Object p3, Object p4) {
-            emit(level, marker, format(message, new Object[] {p0, p1, p2, p3, p4}), throwable);
+            emit2(format(message, new Object[] {p0, p1, p2, p3, p4}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1, Object p2, Object p3, Object p4, Object p5) {
-            emit(level, marker, format(message, new Object[] {p0, p1, p2, p3, p4, p5}), throwable);
+            emit2(format(message, new Object[] {p0, p1, p2, p3, p4, p5}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1, Object p2, Object p3, Object p4, Object p5, Object p6) {
-            emit(level, marker, format(message, new Object[] {p0, p1, p2, p3, p4, p5, p6}), throwable);
+            emit2(format(message, new Object[] {p0, p1, p2, p3, p4, p5, p6}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1, Object p2, Object p3, Object p4, Object p5, Object p6, Object p7) {
-            emit(level, marker, format(message, new Object[] {p0, p1, p2, p3, p4, p5, p6, p7}), throwable);
+            emit2(format(message, new Object[] {p0, p1, p2, p3, p4, p5, p6, p7}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1, Object p2, Object p3, Object p4, Object p5, Object p6, Object p7, Object p8) {
-            emit(level, marker, format(message, new Object[] {p0, p1, p2, p3, p4, p5, p6, p7, p8}), throwable);
+            emit2(format(message, new Object[] {p0, p1, p2, p3, p4, p5, p6, p7, p8}), throwable);
         }
 
         @Override
         public void log(String message, Object p0, Object p1, Object p2, Object p3, Object p4, Object p5, Object p6, Object p7, Object p8, Object p9) {
-            emit(level, marker, format(message, new Object[] {p0, p1, p2, p3, p4, p5, p6, p7, p8, p9}), throwable);
+            emit2(format(message, new Object[] {p0, p1, p2, p3, p4, p5, p6, p7, p8, p9}), throwable);
         }
 
         @Override
         public void log() {
-            emit(level, marker, "", throwable);
+            if (pendingMessage != null) {
+                emit2(keyValuePrefix() + format(pendingMessage, pendingArguments.toArray()), throwable);
+            } else {
+                emit2("", throwable);
+            }
+        }
+
+        private String keyValuePrefix() {
+            if (pendingKeyValues.isEmpty()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder(32);
+            for (String[] kv : pendingKeyValues) {
+                sb.append(kv[0]).append('=').append(kv[1]).append(' ');
+            }
+            return sb.toString();
+        }
+
+        private void emit2(String message, Throwable t) {
+            emit(level, marker, slf4jMarkerPrefix + message, t);
         }
     }
 

@@ -9,8 +9,19 @@ import org.apache.logging.log4j.util.Supplier;
  * <p>Returned by {@code atTrace()/atDebug()/.../always()}; every terminal
  * {@code log(...)} call writes one event through the owning
  * {@code LoggerClass}. {@link #NOOP} is an inert instance.</p>
+ *
+ * <p>This interface also extends {@code org.slf4j.spi.LoggingEventBuilder}:
+ * {@code org.apache.logging.log4j.Logger} extends {@code org.slf4j.Logger}, and
+ * both APIs declare the fluent {@code atX()} entry points, so the log4j2
+ * builder must be a covariant subtype of the SLF4J 2.0 builder for the two
+ * interfaces to coexist (the log4j2 {@code atInfo()} returns this subtype).
+ * The inherited fluent methods ({@code setMessage}/{@code addArgument}/...)
+ * are implemented by the log4j2 builder and write through the same engine;
+ * their supplier arguments are the {@code java.util.function.Supplier} of the
+ * SLF4J API, distinct from the log4j2 {@code org.apache.logging.log4j.util.Supplier}
+ * used by the log4j2 overloads.</p>
  */
-public interface LogBuilder {
+public interface LogBuilder extends org.slf4j.spi.LoggingEventBuilder {
 
     /** Inert builder that drops every call. */
     LogBuilder NOOP = new NoopLogBuilder();
@@ -82,6 +93,50 @@ public interface LogBuilder {
         @Override
         public LogBuilder withLocation(StackTraceElement location) {
             return this;
+        }
+
+        @Override
+        public LogBuilder setCause(Throwable cause) {
+            return this;
+        }
+
+        @Override
+        public LogBuilder addMarker(org.slf4j.Marker marker) {
+            return this;
+        }
+
+        @Override
+        public LogBuilder addArgument(Object p) {
+            return this;
+        }
+
+        @Override
+        public LogBuilder addArgument(java.util.function.Supplier<?> objectSupplier) {
+            return this;
+        }
+
+        @Override
+        public LogBuilder addKeyValue(String key, Object value) {
+            return this;
+        }
+
+        @Override
+        public LogBuilder addKeyValue(String key, java.util.function.Supplier<Object> valueSupplier) {
+            return this;
+        }
+
+        @Override
+        public LogBuilder setMessage(String message) {
+            return this;
+        }
+
+        @Override
+        public LogBuilder setMessage(java.util.function.Supplier<String> messageSupplier) {
+            return this;
+        }
+
+        @Override
+        public void log(java.util.function.Supplier<String> messageSupplier) {
         }
 
         @Override
