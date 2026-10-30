@@ -2,27 +2,27 @@
 setlocal enabledelayedexpansion
 
 REM ------------------------------------------------------------------
-REM JsPlus-Core automated test suite - TestAll.bat
+REM JsPlus-LogReplaced automated test suite - TestAll.bat
 REM Flow:
 REM   1) Build the runtime classpath from every JAR under
 REM      <PROJECT_ROOT>/LibHome - script engines + deps, including the
 REM      project JAR produced by 'ant build':
-REM      <PROJECT_ROOT>/LibHome/jsplus/default/jsplus-core-<version>.jar
-REM      (single Tomcat-standard JAR; com.killcoding.* + org.* replacements,
-REM      version auto-bumped from <PROJECT_ROOT>/version.properties).
+REM      <PROJECT_ROOT>/LibHome/jsplus/default/jsplus-logreplaced-<version>.jar
+REM      (the org.* logging-replacement layer; com.killcoding.* comes from the jsplus-core-<version>.jar
+REM      in the same LibHome/jsplus/default folder; version auto-bumped from <PROJECT_ROOT>/version.properties).
 REM   2) Run TestAll.js in a standalone JsPlus console in THIS JVM
 REM      (com.killcoding.jsplus.Main, same entry the JsPlus-Tomcat suite uses).
 REM      No external server, H2 or Tomcat is required.
 REM      JS_PLUS_PATH=<PROJECT_ROOT>/JsPlus/ (runtime anchor), so the suites
 REM      resolve <PROJECT_ROOT>/test/TestBase.js + suites and write reports to
-REM      <PROJECT_ROOT>/test_reports/ (logs land in <PROJECT_ROOT>/logs/app/).
+REM      <PROJECT_ROOT>/docs/latest/report/ (logs land in <PROJECT_ROOT>/logs/app/).
 REM      Stdin is redirected to NUL so com.killcoding.jsplus.Main exits
 REM      right after the -Task completes (otherwise it blocks on the
 REM      interactive scanner, see Main.java scanner loop).
 REM   3) Exit with the JVM's exit code.
 REM Override via env (same convention as JsPlus-Tomcat):
-REM      JsPlus_JavaDir_JsPlus-Core   - JDK directory under Java\ (default: default)
-REM      JsPlus_JvmParams_JsPlus-Core - JVM params (default: -Xms256m -Xmx1024m -Xss256k)
+REM      JsPlus_JavaDir_JsPlus-LogReplaced   - JDK directory under Java\ (default: default)
+REM      JsPlus_JvmParams_JsPlus-LogReplaced - JVM params (default: -Xms256m -Xmx1024m -Xss256k)
 REM      SCRIPT_ENGINE (arg %1)       - default: graalvm.js
 REM ------------------------------------------------------------------
 
@@ -37,17 +37,36 @@ set JS_PLUS_PATH_ORIGIN=%BIN_PATH%..\JsPlus\
 SET "JS_PLUS_PATH=%JS_PLUS_PATH_ORIGIN:\=/%"
 set LIB_HOME=%JS_PLUS_PATH%../LibHome/
 
+REM ------------------------------------------------------------------
+REM Step 0: clean the run-scoped scratch + log output so every run starts
+REM from a clean tree. JsPlus\.tmp holds the evalJavaSource/evalJavaFile
+REM scratch (compiled temp classes + MD5 source dirs), so stale MD5 dirs
+REM cannot leak between runs (same as JsPlus-Core Step 0b). logs\* is the
+REM engine's output tree (logs\app\<yyyyMMdd>.log); a clean tree also keeps
+REM the suites honest - they assert on freshly written lines, so lines
+REM left by a previous run could otherwise satisfy a check by accident.
+REM ------------------------------------------------------------------
+if exist "%JS_PLUS_PATH_ORIGIN%.tmp" (
+    rmdir /s /q "%JS_PLUS_PATH_ORIGIN%.tmp"
+    echo [TestAll] Removed JsPlus\.tmp
+)
+if exist "%JS_PLUS_PATH_ORIGIN%..\logs" (
+    del /f /q "%JS_PLUS_PATH_ORIGIN%..\logs\*" >nul 2>&1
+    for /d %%d in ("%JS_PLUS_PATH_ORIGIN%..\logs\*") do rmdir /s /q "%%d"
+    echo [TestAll] Cleared logs\*
+)
+
 set "DEPEND_LIBS="
 for /r "%JS_PLUS_PATH_ORIGIN%..\LibHome" %%j in (*.jar) do set "DEPEND_LIBS=!DEPEND_LIBS!;%%j"
 set "DEPEND_LIBS=!DEPEND_LIBS:~1!"
 if not defined DEPEND_LIBS (
-    echo Error: No JARs found under LibHome. Run 'ant build' first ^(produces LibHome/jsplus/default/jsplus-core-^<version^>.jar^).
+    echo Error: No JARs found under LibHome. Run 'ant build' first ^(produces LibHome/jsplus/default/jsplus-logreplaced-^<version^>.jar^).
     exit /b 1
 )
 set "CORE_JAR="
-for %%j in ("%JS_PLUS_PATH_ORIGIN%..\LibHome\jsplus\default\jsplus-core-*.jar") do set "CORE_JAR=%%j"
+for %%j in ("%JS_PLUS_PATH_ORIGIN%..\LibHome\jsplus\default\jsplus-logreplaced-*.jar") do set "CORE_JAR=%%j"
 if not defined CORE_JAR (
-    echo WARN: LibHome/jsplus/default/jsplus-core-*.jar not found. Run 'ant build' first.
+    echo WARN: LibHome/jsplus/default/jsplus-logreplaced-*.jar not found. Run 'ant build' first.
 )
 
 FOR %%I IN ("%JS_PLUS_PATH%..") DO SET "AppName=%%~nxI"
@@ -91,6 +110,35 @@ set JSPLUS_TEST_EXIT=1
 %JAVA_BIN% %JvmParams% -cp "%DEPEND_LIBS%" com.killcoding.jsplus.Main -ScriptEngine "%SCRIPT_ENGINE%" -Env script -WriteHistory false -Task "%JS_PLUS_PATH%../test/TestAll.js" < NUL
 set "RC=%ERRORLEVEL%"
 echo TestAll exit code: %RC%
+
+REM ------------------------------------------------------------------
+REM Step 2b: Archive the test reports under the same docs layout as the
+REM javadoc site: docs/reports/<version>.jar (one jar per run) plus
+REM docs/latest/report/ as the browsable newest reports. Version is taken
+REM from the project jar name (jsplus-logreplaced-<version>.jar). A failure
+REM to archive is only a WARN and never changes the suite exit code
+REM (RC was captured above). The report archive is owned by TestAll (ant
+REM only prunes its own docs/apis tree), so the newest-10 bound lives here.
+REM ------------------------------------------------------------------
+set "PROJ_FNAME="
+for %%f in ("%CORE_JAR%") do set "PROJ_FNAME=%%~nxf"
+if not defined PROJ_FNAME (
+    echo WARN: Cannot locate LibHome/jsplus/default/jsplus-logreplaced-*.jar, skipping report archive.
+) else (
+    set "PROJ_VERSION=%PROJ_FNAME:jsplus-logreplaced-=%"
+    set "PROJ_VERSION=!PROJ_VERSION:.jar=!"
+    echo [TestAll] Archiving test reports as docs/reports/!PROJ_VERSION!.jar ^(docs/latest/report^)...
+    if not exist "%JS_PLUS_PATH_ORIGIN%..\docs\reports" mkdir "%JS_PLUS_PATH_ORIGIN%..\docs\reports"
+    if exist "%JS_PLUS_PATH_ORIGIN%..\docs\reports\!PROJ_VERSION!.jar" del "%JS_PLUS_PATH_ORIGIN%..\docs\reports\!PROJ_VERSION!.jar"
+    "%JS_PLUS_PATH%../Java/%JAVA_DIR%/bin/jar.exe" cf "%JS_PLUS_PATH_ORIGIN%..\docs\reports\!PROJ_VERSION!.jar" -C "%JS_PLUS_PATH_ORIGIN%..\docs\latest\report" .
+    if errorlevel 1 (
+        echo WARN: Failed to pack test report jar ^(jar.exe missing?^), continuing.
+    ) else (
+        echo [TestAll] Packed docs/reports/!PROJ_VERSION!.jar
+    )
+    powershell -NoProfile -Command "$d='%JS_PLUS_PATH_ORIGIN%..\docs\reports'; $jars=@(Get-ChildItem -LiteralPath $d -Filter *.jar | Sort-Object LastWriteTime); if($jars.Count -gt 10){ $jars | Select-Object -First ($jars.Count-10) | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }; Write-Output ('[TestAll] Pruned docs/reports to newest 10 (' + (Get-ChildItem -LiteralPath $d -Filter *.jar).Count + ' jars kept)') }"
+)
+
 exit /b %RC%
 
 endlocal

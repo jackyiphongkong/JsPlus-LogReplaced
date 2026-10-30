@@ -1,10 +1,10 @@
 // ============================================================================
-// JsPlus-Core TestLog - log package test suite (console mode)
+// JsPlus-LogReplaced TestLog - log package test suite (console mode)
 // ----------------------------------------------------------------------------
 // Run      : test/TestAll.bat / test/TestAll.sh (or inside the JsPlus console:
 //              Console.eval(<PROJECT_ROOT>/test/TestLog.js))
 // Harness  : Shared plumbing lives in TestBase.js and is loaded below.
-// Output   : <PROJECT_ROOT>/test_reports/TestLog-Report.html / .md
+// Output   : <PROJECT_ROOT>/docs/latest/report/TestLog-Report.html / .md
 // Coverage : com.killcoding.log
 //            - LoggerFactory.getLogger
 //            - Logger level state (INFO from JsPlus/config/Logger.properties)
@@ -12,9 +12,13 @@
 //            - FileOut=true writes <PROJECT_ROOT>/logs/app/<yyyyMMdd>.log
 //              containing the marker message (LogRecord async flush, OutLogTimer=1s)
 //            - Logger.setLevel("DEBUG") flips isDebugEnabled
+//            - DatabaseOut writes the marker rows into logdb.app_logger_msg,
+//              confirmed by dbVerify (Console.getDataSource -> logdb on :3308)
 // PREREQ   : <PROJECT_ROOT>/JsPlus/config/Logger.properties is loaded by
 //            ScriptConsole.initEnv() at startup (Level=INFO, FileOut=true,
 //            FileOutFolder=${JS_PLUS_PATH}/../logs/app/).
+//            The C6 dbVerify also needs the H2 server on :3308 to be running
+//            (JsPlus/bin/StartH2.bat) and DatabaseOut=true.
 // ============================================================================
 
 var System = Java.type("java.lang.System");
@@ -32,14 +36,14 @@ try {
 beginTest();
 
 var REPORT_NAME = "TestLog-Report.html";
-var REPORT_TITLE = "JsPlus-Core Log Test Report";
+var REPORT_TITLE = "JsPlus-LogReplaced Log Test Report";
 
 var LoggerFactory = Java.type("com.killcoding.log.LoggerFactory");
 var Logger = Java.type("com.killcoding.log.Logger");
 var LogRecord = Java.type("com.killcoding.log.LogRecord");
 var CommonTools = Java.type("com.killcoding.tool.CommonTools");
 
-print("=== JsPlus-Core Log Test ===");
+print("=== JsPlus-LogReplaced Log Test ===");
 print("JS_PLUS_PATH: " + System.getProperty("JS_PLUS_PATH"));
 
 var log = LoggerFactory.getLogger("com.killcoding.test.TestLog");
@@ -127,6 +131,36 @@ check({
     objective: "Verify setLevel(String) flips the level and can be restored",
     objectiveZh: "驗證 setLevel(String) 切換等級並可還原",
     command: "Logger.setLevel(\"DEBUG\"); log.isDebugEnabled(); Logger.setLevel(\"INFO\")"
+});
+
+// Case C6
+// dbVerify against the persisted state: the engine's DatabaseOut path writes the
+// marker rows into logdb.app_logger_msg (async flush, OutLogTimer=1s), so poll
+// until they appear instead of assuming a fixed delay. The connection comes from
+// Console.getDataSource(), i.e. JsPlus/config/DataSource.properties -> logdb on
+// :3308, exactly the datasource the engine writes through.
+var dbCnt = -1;
+var dbAttempts = 0;
+var dbSql = "select count(*) as TOTAL from app_logger_msg where message like '%" + marker + "%'";
+for (var dp = 0; dp < 10; dp++) {
+    dbAttempts++;
+    dbVerify(function () { return dbSql; });
+    dbCnt = (dbvResult !== null && dbvResult.error === undefined
+        && dbvResult.rows !== undefined && dbvResult.rows.length > 0)
+        ? parseInt(dbvResult.rows[0][0], 10) : -1;
+    if (dbCnt > 0) {
+        break;
+    }
+    Thread.sleep(500);
+}
+check({
+    name: "DatabaseOut persisted the marker rows (dbVerify on app_logger_msg)",
+    ok: dbCnt > 0,
+    detail: "rows matching the marker=" + dbCnt + " after " + dbAttempts + " dbVerify attempt(s)"
+        + (dbvResult !== null && dbvResult.error !== undefined ? " / last error: " + dbvResult.error : ""),
+    objective: "Verify the engine's DB output really persists log rows into app_logger_msg",
+    objectiveZh: "驗證引擎的資料庫輸出確實將日誌列寫入 app_logger_msg",
+    command: "dbVerify(\"" + dbSql + "\")"
 });
 
 writeReport();

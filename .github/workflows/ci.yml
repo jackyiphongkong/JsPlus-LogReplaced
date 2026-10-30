@@ -27,8 +27,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ant
 
-      - name: Build jsplus-embed.jar
+      - name: Build jsplus-logreplaced.jar
         run: ant build
+
+      - name: Verify jar version matches version.properties
+        run: |
+          MAJOR=$(grep '^jr.major=' version.properties | cut -d= -f2)
+          MINOR=$(grep '^jr.minor=' version.properties | cut -d= -f2)
+          PATCH=$(grep '^jr.patch=' version.properties | cut -d= -f2)
+          JAR="LibHome/jsplus/default/jsplus-logreplaced-${MAJOR}.${MINOR}.${PATCH}.jar"
+          if [ ! -s "$JAR" ]; then
+            echo "ERROR: expected JAR not found or empty: $JAR"
+            exit 1
+          fi
+          echo "Verified JAR: $JAR (matches version.properties ${MAJOR}.${MINOR}.${PATCH})"
 
       - name: Run TestAll.sh
         run: |
@@ -38,8 +50,8 @@ jobs:
 
       - name: Publish CI summary
         run: |
-          if [ -f test_reports/TestAll-CI-Summary.md ]; then
-            cat test_reports/TestAll-CI-Summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f docs/latest/report/TestAll-CI-Summary.md ]; then
+            cat docs/latest/report/TestAll-CI-Summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload test reports
@@ -47,6 +59,9 @@ jobs:
         with:
           name: test-reports
           path: |
-            test_reports/
+            docs/latest/report/
             logs/
+            LibHome/jsplus/default/*.jar
+            docs/apis/*.jar
+            docs/latest/api/
           if-no-files-found: error

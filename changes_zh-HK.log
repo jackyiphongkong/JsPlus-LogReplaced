@@ -1,0 +1,76 @@
+
+## 6.1.29 (2026.10.30 11:19:48)
+- found diffed: org/apache/commons/logging/Log.java (M)
+- found diffed: org/apache/commons/logging/LoggerClass.java (M)
+- found diffed: org/apache/log4j/Appender.java (A)
+- found diffed: org/apache/log4j/Category.java (A)
+- found diffed: org/apache/log4j/Hierarchy.java (A)
+- found diffed: org/apache/log4j/Layout.java (A)
+- found diffed: org/apache/log4j/Level.java (A)
+- found diffed: org/apache/log4j/LogManager.java (A)
+- found diffed: org/apache/log4j/Logger.java (M)
+- found diffed: org/apache/log4j/Priority.java (A)
+- found diffed: org/apache/log4j/spi/AppenderAttachable.java (A)
+- found diffed: org/apache/log4j/spi/ErrorHandler.java (A)
+- found diffed: org/apache/log4j/spi/Filter.java (A)
+- found diffed: org/apache/log4j/spi/HierarchyEventListener.java (A)
+- found diffed: org/apache/log4j/spi/LocationInfo.java (A)
+- found diffed: org/apache/log4j/spi/LoggerFactory.java (A)
+- found diffed: org/apache/log4j/spi/LoggerRepository.java (A)
+- found diffed: org/apache/log4j/spi/LoggingEvent.java (A)
+- found diffed: org/apache/log4j/spi/OptionHandler.java (A)
+- found diffed: org/apache/log4j/spi/RepositorySelector.java (A)
+- found diffed: org/apache/log4j/spi/ThrowableInformation.java (A)
+- found diffed: org/apache/logging/log4j/Level.java (A)
+- found diffed: org/apache/logging/log4j/LogBuilder.java (A)
+- found diffed: org/apache/logging/log4j/LogManager.java (M)
+- found diffed: org/apache/logging/log4j/Logger.java (M)
+- found diffed: org/apache/logging/log4j/LoggerClass.java (M)
+- found diffed: org/apache/logging/log4j/Marker.java (A)
+- found diffed: org/apache/logging/log4j/MarkerManager.java (A)
+- found diffed: org/apache/logging/log4j/message/EntryMessage.java (A)
+- found diffed: org/apache/logging/log4j/message/ExitMessage.java (A)
+- found diffed: org/apache/logging/log4j/message/FlowMessage.java (A)
+- found diffed: org/apache/logging/log4j/message/FlowMessageFactory.java (A)
+- found diffed: org/apache/logging/log4j/message/Message.java (A)
+- found diffed: org/apache/logging/log4j/message/MessageFactory.java (A)
+- found diffed: org/apache/logging/log4j/spi/StandardLevel.java (A)
+- found diffed: org/apache/logging/log4j/util/MessageSupplier.java (A)
+- found diffed: org/apache/logging/log4j/util/Supplier.java (A)
+- found diffed: org/slf4j/IMarkerFactory.java (A)
+- found diffed: org/slf4j/Logger.java (M)
+- found diffed: org/slf4j/LoggerClass.java (M)
+- found diffed: org/slf4j/Marker.java (A)
+- found diffed: org/slf4j/MarkerFactory.java (A)
+- build: 自動版本遞增
+
+- 測試：把 5 個廠商套件註冊進 TestAll.js，彙總報告涵蓋全部套件（7 套件／44 用例），而非舊的 6/63；廠商套件只在 JSPLUS_FACADE_EXIT=1（TestFacades.bat/.sh、run-suite.bat 設定）時自持退出碼，TestAll 從不設定該變數
+- 測試：移除假陽性的 TestDatasource.js 及其報告——其範圍註記恆為通過並宣稱未內建 JDBC 驅動，實際 LibHome/h2/default/h2-2.4.240.jar 存在；該套件只驗 Clock getter
+- 測試：移除 TestCache.js / TestFile.js / TestTool.js 及其報告——它們測的是本替換層不發佈的引擎套件 com.killcoding.cache / .file / .tool
+- 註記：本檔 6.1.28 及更早的段落已於 2026-10-30 11:19:48 的建置中被截斷；請從你自己的備份還原（本機 git 鏡像並未追蹤 changes.log）
+- 文件：測試報告改為寫入 docs/latest/report/（與 JsPlus-Core 相同佈局），不再使用 test_reports/；TestBase.js / TestAll.js、各套件頭部註解、README、CI 產物路徑與 .gitignore 均已同步，既有 17 個報告檔已一併遷移
+- 測試：TestAll.bat / TestAll.sh 每次執行後把 docs/latest/report 歸檔成 docs/reports/<version>.jar（版本取自專案 jar 檔名），並保留最新 10 個；歸檔失敗僅 WARN、不影響退出碼——與 JsPlus-Core 同一佈局（docs/reports 已列入 .gitignore）
+- 測試：TestAll.bat / TestAll.sh 在任何套件開跑前先清理 JsPlus\.tmp（evalJavaSource/evalJavaFile 暫存樹，同 JsPlus-Core Step 0b）與 logs\*，每輪都從空日誌開始——上一輪遺留的行不可能再造成誤判通過（實測：620687 bytes 的 logs/app/20261030.log 與另兩天舊檔已清空，44/0 全綠，本輪自行寫出 39817 bytes 日誌）
+- 測試：新增 test/LoadTest.js（6 個負載用例：10000 行突發吞吐、異步 flush 後零丟行、8 KB 訊息完整性、200 個異常、5 個 logger × 1000 行交錯、負載下的級別閘門），在 TestAll.js 註冊為**最後**一個套件（整體 50 passed / 0 failed），並可由 test/LoadTest.bat / .sh 以 JSPLUS_LOADTEST_EXIT=1 單獨執行；實測入列約 5000 行/秒。註記：此 GraalVM 版本禁止跨執行緒進入 JS context、也無法從 JS 實例化 Java 介面，故負載只能單執行緒，直擊異步寫入佇列
+- 啟動器：JsPlus\bin\BG_StartCore.bat / BG_StartCore.sh 更名為 BG_StartLogRp.bat / BG_StartLogRp.sh（原本即委派給 StartLogRp；README.md、README_zh-HK.md 與 JsPlus/README.md 的引用已同步）。實測：更名後的腳本能在背景（隱藏 cmd 視窗）啟動主控台 JVM，並可由 bin\StopLogRp.bat 乾淨終止
+- 執行環境錨點：加入 H2 TCP 伺服器及其設定，與 JsPlus-Core 同型——JsPlus/bin/StartH2.bat+.sh、BG_StartH2.bat+.sh、StopH2.bat+.sh（後者以關鍵字 StartH2 委派 Stop.bat/Stop.sh）、JsPlus/script/StartH2.js + H2Server.js、JsPlus/config/Appenv.properties（H2_PORT=${JsPlus_H2_PORT:3306}、H2_BASE_DIR=${JS_PLUS_PATH}../Database/）與 JsPlus/config/DataSource.properties（jdbc:h2:tcp://localhost:${H2_PORT}/testdb，帳號 sample_user／密碼 sample_password）；/Database 已加入 .gitignore。實測：BG_StartH2 以 -GhostName H2Ghost 在 3306 啟起服務，JDBC 查詢（org.h2.tools.Shell，select 1）回傳 1 列並生成 Database/testdb.mv.db，StopH2 終止 JVM 並釋放 3306
+- H2 主控台與全域停止（對齊 JsPlus-Core）：新增 JsPlus/bin/StartH2Console.bat/.sh（對 `Database/<db>` 開 H2 Shell，`init` = fallback.sql → change.sql；預設 DB 為 testdb、使用者為 sample_user，因本項目 testdb 由 sample_user 首次建立，`sa` 會回 28000）、JsPlus/bin/StopAll.bat/.sh（殺掉命令行含 `<PROJECT_ROOT>/JsPlus` 的全部 java）、dbscript/fallback.sql（重置腳本，永不 drop ghost_remote_command）。StopAll 改用 @($procs).Count，單一匹配時會正確印出「Terminated 1 process(es).」而非空白數字。實測：StartH2Console init rc=0（fallback／change 皆套用）、Shell 能進入 testdb 提示符、StopAll 殺掉 H2 JVM（PID 13412）並釋放 3306
+- H2 錨點（對齊 JsPlus-Core）：JsPlus/config/GhostDataSource.properties（GhostTable=ghost_remote_command、GhostTimer=500ms、H2 連線——GhostConsole 建構時讀取，缺此檔則 -GhostName H2Ghost 的主控台無法連庫）、dbscript/change.sql（可重複執行 DDL：sample_user ＋ ghost_remote_command）與 dbscript/fallback.sql（重置腳本，永不 drop ghost_remote_command）
+- 資料庫改名：H2 錨點資料庫由 `testdb` 改為 `logdb`，與本項目用途（統一口徑處理 log）一致。已同步 config/DataSource.properties、config/GhostDataSource.properties（jdbc:h2:tcp://localhost:${H2_PORT}/logdb）、StartH2Console 的預設 DB，以及所有提到該庫名的註解與文件。舊的 Database/testdb.mv.db 保留在原處（執行產物、已 gitignore），不需要可自行刪除。實測：StartH2Console init 會建立 Database/logdb.mv.db（sample_user ＋ ghost_remote_command），TCP 連線 jdbc:h2:tcp://localhost:3306/logdb 查詢回 1 列
+- Schema：dbscript/change.sql 現建 app_logger_config（每個 logger 一行：app_name/logger_name/log_level/enable_console/enable_file/out_log_timer/out_log_batch_limit/file_name_format/file_out_folder/file_out_max_file_size/file_out_max_backup_index/file_out_archive_days/message_format/alert_message_class）與 app_logger_msg（每個日誌事件一行：app_name/logger_name/log_level/log_time/hostname/thread_name/thread_id/message CLOB/stack_trace CLOB），兩表皆為 id CHAR(16) PK ＋ created_at/updated_at/deleted_at/deleted 並附索引。ghost_remote_command 佇列不再建立（本層職責是統一日誌路徑，不是遠程命令派發）；JsPlus/config/GhostDataSource.properties 保留 Core 同構，並註明 ghost 主控台在缺表時空轉重試、H2 仍正常服務
+- Schema：app_logger_config 收斂到引擎真正讀取的欄位。LogRecord.writeLogBatchToDatabase() 只從 DatabaseOutConfigFrom 回傳的第一列取 level / class_name_enable_regex / class_name_disable_regex，並以 :hostname 定位，故表改為 (id, hostname, level, class_name_enable_regex, class_name_disable_regex, created_at, updated_at, deleted_at, deleted)，索引 idx_alc_hostname / idx_alc_deleted。先前的 14 欄（照 Logger.properties 逐項映射）是錯的：引擎沒有 per-logger 設定，而且若把欄位改名為 log_level，會因為結果欄位標籤一律轉小寫（DriverExecutor.COLUMN_NAME_CASE_MODE = LOWER）且以 Map.containsKey("level") 查找而靜默失效。三份 README 與 Logger.properties 的 DatabaseOutConfigFrom 註釋已同步
+- 文件：埠號由 3306 更正為 3308。JsPlus/config/Appenv.properties 出廠值為 H2_PORT=${JsPlus_H2_PORT:3308}，故錨點是 jdbc:h2:tcp://localhost:3308/logdb；三份 README 與 change.sql 檔頭仍寫 3306，會把讀者指到沒有服務的埠（伺服器實際聽 3308 時連線被拒）
+- DatabaseOut：三條語句已啟用——JsPlus/config/Logger.properties 現設 DatabaseOut=true、DatabaseOutDataSource=${JS_PLUS_PATH}config/DataSource.properties、DatabaseOutInsertExecute（INSERT INTO app_logger_msg，每個 DatabaseOutBatchLimit 為一批 JDBC batch）、DatabaseOutConfigFrom（按 host 取 level / class_name_enable_regex / class_name_disable_regex，以 MIN() 聚合，令呼叫端未做 null 檢查的 first() 必定取得一列）與 DatabaseOutArchiveExecute。參數映射是實讀引擎源碼得出、非推斷：:created_at 承載的是 16 字元 id 而非時間戳（Logger.log() 把 CommonTools.generateId(16) 放進去，綁 TIMESTAMP 必失敗，故 INSERT 用 CURRENT_TIMESTAMP）、:id 可填 CHAR(16)、:log_thread_id 是 long 而欄位是 VARCHAR，故 CAST(:log_thread_id AS VARCHAR)。實測（3308 上的 logdb）：build/run-suite.bat TestLog 在 app_logger_msg 留下 10 列，level / logger / hostname / thread name / thread id / message 皆正確，TestLog 仍為 5 passed / 0 failed
+- 修正歸檔語句：引擎以 int 運算計算 archiveTime = System.currentTimeMillis() - DatabaseOutArchiveDays*24*3600*1000，保留天數達 25 天以上即溢位（31 天為 2678400000，超出 Integer.MAX_VALUE），令 :archive_time 參數落在**未來**——2026-10-30 的執行實測值為 2026-11-18。於是同一輪 flush 的 DELETE 把剛插入的列全數刪除，這正是 INSERT 明明執行、也從未報錯，app_logger_msg 卻始終為 0 列的原因。DatabaseOutArchiveExecute 現把保留天數寫進 SQL：DATEADD('DAY', -31, CURRENT_TIMESTAMP)，不再引用 :archive_time；DatabaseOutArchiveDays 僅作文檔說明，須與 SQL 中的 -31 保持一致
+- 表結構對齊：app_logger_msg.message / stack_trace 一律為你指定的 VARCHAR(2000)。實測當時 logdb 仍是 CLOB（MAXMSG 8020、MAXST 13335 字元），故先 drop 該表再重套 dbscript/change.sql——INFORMATION_SCHEMA 現回報兩列皆為 CHARACTER VARYING(2000)，而先前 LoadTest 產生的 15571 列隨 drop 一併丟棄（屬執行產物）。change.sql 內仍寫著「CLOB: no length cap」的註釋已改寫，改為說明真實上限與整批回滾的後果。實測：H2 對 2020 字元的值即直接報「Value too long for column ... [22001-240]」，且一列被拒即令整個 JDBC batch 回滾，故 DatabaseOutInsertExecute 現以 LEFT(:message, 2000) / LEFT(:stack_trace, 2000) 截斷；未截斷的全文仍寫入檔案日誌。實測：TestAll 50 passed / 0 failed、app_logger_msg 15563 列、max(length(message)) = max(length(stack_trace)) = 2000，執行日誌再無 22001
+- dbscript/change.sql 補上 app_logger_config 的運行注意（僅註釋，DDL 未動）：level 只接受 DEBUG / INFO / WARN / ERROR——Logger.LEVEL_LIST 就是這四個，故 level='MARK' 會被 checkLevel 拒絕並靜默回落 Logger.properties（實測輸出與完全沒有配置行一致）；level 不控制 MARK——logger.mark() 走獨立分支，level='ERROR' 之下 4 條 MARK 仍全數寫入，而 INFO、WARN 已被濾掉；兩個 regex 欄位以 Java String.matches() 比對，即**整個類名**必須匹配，並非子串查找，故 '^com.killcoding.probe' 對 'com.killcoding.probe.CfgProbe' 靜默無效（16 條全部照寫、無錯誤、無警告），而 '^com\.killcoding\.probe.*' 則把資料庫與檔案日誌一律封掉。改畢 change.sql 仍可冪等重跑（org.h2.tools.RunScript rc=0）
+- 審查 LogRecord.writeLogBatchToDatabase() 期間實測、惟未修（屬 JsPlus-Core 引擎側）：DB_WRITE_POOL 是 daemon 線程池，寫入 300 條後立即 System.exit(0)，app_logger_msg 得 0 列、檔案日誌得 0 行；改為等 2.5 秒再退出，則兩邊皆為 300/300。因此任何乾淨退出都會靜默丟掉最後一個 flush 週期。另記：每次 flush 都會執行 DatabaseOutArchiveExecute（隨 OutLogTimer 每秒一次，引擎無降頻參數）、dataSource 為 null 時每次 flush 都重試 initDataSource、DB_WRITE_POOL 使用無界佇列
+- 以 jsplus-core 6.1.210（LibHome\jsplus\default，取代 6.1.204，舊檔已改為 .bak）重新審查 LogRecord.writeLogBatchToDatabase()。引擎側已修四項：DB_WRITE_POOL 由無界的 newFixedThreadPool 改為 ThreadPoolExecutor(1,1) + ArrayBlockingQueue(1024) + CallerRunsPolicy，任務不再無界堆積；歸檔掃描改由新增的 DatabaseOutArchiveTimer（默認 60000 毫秒）配合 volatile lastArchiveExecuteTime 節流，不再隨每次 flush 執行；initDataSource 新增 DatabaseOutRetryTimer（默認 30000 毫秒）與 lastInitFailAt 退避，資料庫離線時不再每秒輸出一次錯誤；archiveTime 運算式補上 L（databaseOutArchiveDays*24*3600*1000L），令「運算溢位把 archive_time 推到未來」的缺陷在源頭修復
+- 6.1.210 仍未修（已實測）：DB_WRITE_POOL 仍為 daemon，LogRecord.start() 亦未註冊 shutdown hook，故寫入 300 條後立即 System.exit(0)，app_logger_msg 得 0 列、檔案日誌得 0 行；同一腳本改為等 2500 毫秒再退出，則兩邊皆為 300/300。至於 flush 執行緒本身是非 daemon 的 newFixedThreadPool 加 while(true)，若 main 結束而未呼叫 System.exit，JVM 只會掛住而不會退出——這正是必須顯式退出的原因，也是最後一個 flush 週期必然丟失的原因。另三項未變：Logger.LEVEL_LIST 仍不含 MARK（level='MARK' 會被靜默拒絕）、類名正則仍是 Java String.matches() 的整串比對（未錨定的寫法會靜默失效）、:created_at 仍裝著 16 字元的 id 而非時間戳
+- JsPlus\config\Logger.properties：補上 jsplus-core 6.1.210 新增的兩個鍵（DatabaseOutArchiveTimer=60000、DatabaseOutRetryTimer=30000）於隱藏段，並重寫歸檔註釋——原註釋把 int 溢位當作現行引擎缺陷描述，而 6.1.204→6.1.210 已修，故改為記錄為歷史事實，同時說明歸檔最多每 DatabaseOutArchiveTimer 執行一次，以及 DatabaseOutArchiveDays 供引擎組出 :archive_time、而實際保留期仍是 DatabaseOutArchiveExecute 內的 -31 字面值
+- 換引擎後重驗：TestAll.bat => 50 passed / 0 failed，exit 0。app_logger_msg 47 417 列、app_logger_config 0 列、log_time 在未來的列 0 筆、deleted = TRUE 的列 0 筆，即歸檔不再抹掉剛寫入的列
+- 以 jsplus-core 6.1.211 重新核對（LibHome\jsplus\default，6.1.210 已轉 .bak）。此版引擎的改動是 flush 執行緒改為 daemon 並命名 LogRecord-Flusher，另 ScriptConsoleBase 提供可替換的 ExitPolicy（默認仍是 System.exit）；沒有新增 Logger.properties 鍵，故配置無需改動。寫庫路徑本身未變：DatabaseOutInsertExecute、DatabaseOutConfigFrom、DatabaseOutArchiveExecute 三條照常執行，換版後跑全量 TestAll 得 50 passed / 0 failed、exit 0，app_logger_msg 由 47 429 列增至 62 997 列（+15 568），log_time 在未來的列 0 筆，max(length(message)) = 2000，證明 LEFT 截斷仍然有效
+- DatabaseOutInsertExecute 與 DatabaseOutArchiveExecute 不再呼叫任何資料庫時間函式：created_at 與 updated_at 改綁 :created_at（由 Logger.log() 於日誌呼叫當刻放進記錄 map 的 java.sql.Timestamp），不再用 CURRENT_TIMESTAMP；歸檔謂詞改為 log_time < :archive_time，不再用 DATEADD('DAY', -31, CURRENT_TIMESTAMP)。亦即「記錄時刻」與「保留期切點」兩者都取自引擎自身的參數。已於本 logdb 實測：植入一筆 40 天前（2026-09-20）的列，於第一次 flush 即被刪除，證明 :archive_time 確實有綁進去；三筆新記錄落庫後 created_at = log_time + 1 毫秒、updated_at = created_at、deleted = FALSE；其後全表 78 562 列，created_at 為 NULL 者 0 筆、updated_at 為 NULL 者 0 筆、log_time 在未來者 0 筆、max(length(message)) = 2000；TestAll 得 50 passed / 0 failed、exit 0
+- JsPlus\config\Logger.properties：修正一處過時說明——原文指 :created_at 裝的是 16 字元 id；jsplus-core 6.1.211 已改為 new java.sql.Timestamp(new Date().getTime())，這正是可以直接綁定的原因。另註明 DatabaseOutArchiveDays 現為保留期的唯一來源，因 DELETE 已綁 :archive_time，不再需要同步任何 -31 字面值
+- 測試骨架：把 JsPlus-Core 的 dbVerify(sqlFn) 移植進 test\TestBase.js。此函式透過 Console.getDataSource()（JsPlus/config/DataSource.properties → jdbc:h2:tcp://localhost:3308/logdb，sample_user，即引擎寫入所用的同一資料源）執行原生 SELECT，保留結構化結果 {sql, columns, rows}（最多 30 列），由 check() 帶進報告：writeReport() 以黃色巢狀 dbv 表（row num + 各欄）呈現，writeMd() 追加「 / dbVerify: `sql` -> [列]」段落；多表 dbvList 形態亦與 Core 同構支援。頭部原稱「dbVerify 有意不移過來」的說明已修正——本項目現已有真實 H2 資料庫，且引擎會把日誌寫進 app_logger_msg，持久化狀態本屬套件應驗證的範圍
+- TestLog：新增用例 C6「DatabaseOut persisted the marker rows (dbVerify on app_logger_msg)」，以 dbVerify 輪詢 app_logger_msg 直至 C3 的 marker 列出現，斷言列數 > 0；於本 logdb 實測：第一次 dbVerify 即查到 4 列（即被接受的四個等級呼叫 info/warn/error/mark，debug 在 Level=INFO 下被過濾）。TestLog 由 5 例增至 6 例，TestAll 由 50 增至 51；最終實跑 51 passed / 0 failed、exit 0

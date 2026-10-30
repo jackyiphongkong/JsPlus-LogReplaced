@@ -1,5 +1,5 @@
 // ============================================================================
-// JsPlus-Core TestAll - unified console entry for the 6 test suites
+// JsPlus-LogReplaced TestAll - unified console entry for the 8 test suites
 // ----------------------------------------------------------------------------
 // Run      : test/TestAll.bat / test/TestAll.sh (standalone JsPlus console):
 //              <java> -cp <LibHome + build jars> com.killcoding.jsplus.Main
@@ -8,14 +8,29 @@
 //            Interactive console eval:
 //              Console.eval(<PROJECT_ROOT>/test/TestAll.js)
 // Output   : Runs, in order:
-//              1) TestConsole.js    -> <PROJECT_ROOT>/test_reports/TestConsole-Report.html
-//              2) TestCache.js      -> <PROJECT_ROOT>/test_reports/TestCache-Report.html
-//              3) TestFile.js       -> <PROJECT_ROOT>/test_reports/TestFile-Report.html
-//              4) TestTool.js       -> <PROJECT_ROOT>/test_reports/TestTool-Report.html
-//              5) TestLog.js        -> <PROJECT_ROOT>/test_reports/TestLog-Report.html
-//              6) TestDatasource.js -> <PROJECT_ROOT>/test_reports/TestDatasource-Report.html
+//              1) TestConsole.js    -> <PROJECT_ROOT>/docs/latest/report/TestConsole-Report.html
+//              2) TestLog.js        -> <PROJECT_ROOT>/docs/latest/report/TestLog-Report.html
+//              3) TestSlf4j.js      -> .../TestSlf4j-Report.html
+//              4) TestCommonsLogging.js -> .../TestCommonsLogging-Report.html
+//              5) TestJuli.js       -> .../TestJuli-Report.html
+//             6) TestLog4j.js       -> .../TestLog4j-Report.html
+//              7) TestLog4j2.js     -> .../TestLog4j2-Report.html
+//              8) LoadTest.js       -> .../LoadTest-Report.html (load runs LAST:
+//                                      its 16.5k burst lines must not disturb
+//                                      the correctness suites above)
 //            This entry point then prints an aggregate pass/fail summary and
 //            writes TestAll-Report.md / TestAll-Report.html / TestAll-CI-Summary.md.
+//            The five replacement-layer vendor suites run in the same JVM too
+//            (they only System.exit when JSPLUS_FACADE_EXIT=1, i.e. when driven
+//            directly by TestFacades.bat/.sh), so this report covers the whole
+//            44-case surface: 15 console/config + 29 vendor.
+//            LoadTest adds its own 6 load cases (burst throughput, zero loss,
+//            large payload, throwable load, multi-logger interleave, level
+//            filtering under load), so the full surface is 50 cases.
+// REMOVED  : TestDatasource.js (false positive: a scope note that always passed,
+//            Clock getters only, unrelated to this layer), TestCache.js /
+//            TestFile.js / TestTool.js (engine packages com.killcoding.cache /
+//            .file / .tool - not what this replacement layer ships).
 // NOTE     : Each suite calls beginTest() and reports its own counters, so
 //            TestAll captures the counters right after each load() completes.
 //            The suites NEVER call System.exit(); TestAll only exits when the
@@ -38,17 +53,27 @@ try {
     throw e;
 }
 
-print("=== JsPlus-Core TestAll (unified entry) ===");
+print("=== JsPlus-LogReplaced TestAll (unified entry) ===");
 print("JS_PLUS_PATH: " + System.getProperty("JS_PLUS_PATH"));
-print("Suites       : TestConsole -> TestCache -> TestFile -> TestTool -> TestLog -> TestDatasource");
+print("Suites       : TestConsole -> TestLog");
+print("              -> TestSlf4j -> TestCommonsLogging -> TestJuli -> TestLog4j -> TestLog4j2");
+print("              -> LoadTest (last: 16.5k burst lines, async-flush assertions)");
 
 var suites = [
-    { file: "TestConsole.js",    title: "TestConsole" },
-    { file: "TestCache.js",      title: "TestCache" },
-    { file: "TestFile.js",       title: "TestFile" },
-    { file: "TestTool.js",       title: "TestTool" },
-    { file: "TestLog.js",        title: "TestLog" },
-    { file: "TestDatasource.js", title: "TestDatasource" }
+    { file: "TestConsole.js",        title: "TestConsole" },
+    { file: "TestLog.js",            title: "TestLog" },
+    // Replacement-layer vendor suites (one per logging family). They do not
+    // exit here: their System.exit only fires under JSPLUS_FACADE_EXIT=1.
+    { file: "TestSlf4j.js",          title: "TestSlf4j" },
+    { file: "TestCommonsLogging.js", title: "TestCommonsLogging" },
+    { file: "TestJuli.js",           title: "TestJuli" },
+    { file: "TestLog4j.js",          title: "TestLog4j" },
+    { file: "TestLog4j2.js",         title: "TestLog4j2" },
+    // Load suite LAST: it enqueues ~16.5k lines (burst, 8 KB payloads,
+    // throwables, multi-logger, level gate), so it must not run before any
+    // suite that asserts on freshly written lines. Its System.exit only fires
+    // under JSPLUS_LOADTEST_EXIT=1 (test/LoadTest.bat / .sh).
+    { file: "LoadTest.js",           title: "LoadTest" }
 ];
 
 var totalPass = 0;
@@ -132,13 +157,13 @@ if (totalFail > 0) {
     print("ALL TESTS PASSED");
 }
 
-// Aggregate markdown + HTML summary into <PROJECT_ROOT>/test_reports/
+// Aggregate markdown + HTML summary into <PROJECT_ROOT>/docs/latest/report/
 try {
-    var reportDir = new File(basePath + "../test_reports");
+    var reportDir = new File(basePath + "../docs/latest/report");
     if (!reportDir.exists()) {
         reportDir.mkdirs();
     }
-    var md = "# JsPlus-Core TestAll Report\n\n";
+    var md = "# JsPlus-LogReplaced TestAll Report\n\n";
     md += "Generated: " + new Date().toString() + "\n\n";
     md += "**" + totalPass + " passed / " + totalFail + " failed**\n\n";
     md += "## Config Self-Check\n\n"
@@ -148,12 +173,12 @@ try {
     for (var m = 0; m < suiteResults.length; m++) {
         md += "| " + suiteResults[m].title + " | " + suiteResults[m].pass + " | " + suiteResults[m].fail + " |\n";
     }
-    var reportPath = basePath + "../test_reports/TestAll-Report.md";
+    var reportPath = basePath + "../docs/latest/report/TestAll-Report.md";
     var report = new DiskFile(reportPath);
     report.write(md, "UTF-8");
     print("Markdown report written to " + reportPath);
 
-    var html = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<title>JsPlus-Core TestAll Report</title>\n"
+    var html = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<title>JsPlus-LogReplaced TestAll Report</title>\n"
         + "<style>\n"
         + "  body { font-family: Consolas, 'Courier New', monospace; background: #f5f6f8; margin: 24px; }\n"
         + "  h1 { font-size: 20px; color: #24292f; }\n"
@@ -165,7 +190,7 @@ try {
         + "  td { padding: 6px 10px; border: 1px solid #d0d7de; vertical-align: top; }\n"
         + "  pre.cfg { background: #fff; border: 1px solid #d0d7de; padding: 10px; font-size: 12px; overflow-x: auto; }\n"
         + "</style>\n</head>\n<body>\n"
-        + "<h1>JsPlus-Core TestAll Report</h1>\n"
+        + "<h1>JsPlus-LogReplaced TestAll Report</h1>\n"
         + "<div class=\"meta\">Generated: " + new Date().toString() + "</div>\n"
         + "<div class=\"" + (totalFail === 0 ? "summary-pass" : "summary-fail") + "\">" + totalPass + " passed / " + totalFail + " failed</div>\n"
         + "<h2>Config Self-Check</h2>\n"
@@ -176,17 +201,17 @@ try {
         html += "<tr><td>" + suiteResults[m2].title + "</td><td>" + suiteResults[m2].pass + "</td><td>" + suiteResults[m2].fail + "</td></tr>\n";
     }
     html += "</table>\n</body>\n</html>\n";
-    var htmlPath = basePath + "../test_reports/TestAll-Report.html";
+    var htmlPath = basePath + "../docs/latest/report/TestAll-Report.html";
     var report2 = new DiskFile(htmlPath);
     report2.write(html, "UTF-8");
     print("HTML report written to " + htmlPath);
 
     // CI summary (from TestBase.writeCiSummary) - compact Markdown that the
     // workflow appends to $GITHUB_STEP_SUMMARY (visible on the Actions run page)
-    // and that ships inside the uploaded test_reports/ artifact.
+    // and that ships inside the uploaded docs/latest/report/ artifact.
     load(basePath + "../test/TestBase.js");
     writeCiSummary({
-        title: "JsPlus-Core CI Summary",
+        title: "JsPlus-LogReplaced CI Summary",
         reportName: "TestAll-CI-Summary.md",
         pass: totalPass,
         fail: totalFail,
@@ -204,8 +229,10 @@ try {
 }
 
 // TestAll.bat/.sh set JSPLUS_TEST_EXIT=1 so this JVM exits after the task.
-// System.exit(0) only terminates this process - JsPlus-Core has no ghost
+// System.exit(0) only terminates this process - JsPlus-LogReplaced has no ghost
 // console to keep alive. Interactive Console.eval runs skip the exit.
+// When a check fails the process still exits 0 (known P1 issue); the aggregate
+// line above is the authoritative result for now.
 var testExit = System.getenv("JSPLUS_TEST_EXIT");
 if (testExit !== null && testExit !== undefined && ("" + testExit) === "1") {
     System.exit(0);

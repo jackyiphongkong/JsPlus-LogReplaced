@@ -1,25 +1,32 @@
 // ============================================================================
-// JsPlus-Core TestBase - shared test harness for the console-mode test suites
+// JsPlus-LogReplaced TestBase - shared test harness for the console-mode test suites
 // ----------------------------------------------------------------------------
 // Provides the common plumbing used by the console-mode API test suites:
 //   - Java type bindings (DiskFile, HashMap, ...)
 //   - pass/fail counters + beginTest() reset
 //   - check({name, ok, detail, objective, objectiveZh, command}) helper
-//   - writeReport() -> <PROJECT_ROOT>/test_reports/<REPORT_NAME>.html via DiskFile
-//   - writeMd()     -> <PROJECT_ROOT>/test_reports/<REPORT_NAME>.md via DiskFile
-//   - writeCiSummary() -> <PROJECT_ROOT>/test_reports/<REPORT_NAME>.md (CI-facing)
+//   - dbVerify(sqlFn) — run a native SQL SELECT through the project's standard
+//     data path (Console.getDataSource() -> DataSource.properties -> logdb on
+//     :3308) and append the result to the detail line; the structured outcome
+//     is rendered as a nested table in the report (JsPlus-Core's dbVerify)
+//   - writeReport() -> <PROJECT_ROOT>/docs/latest/report/<REPORT_NAME>.html via DiskFile
+//   - writeMd()     -> <PROJECT_ROOT>/docs/latest/report/<REPORT_NAME>.md via DiskFile
+//   - writeCiSummary() -> <PROJECT_ROOT>/docs/latest/report/<REPORT_NAME>.md (CI-facing)
 //   - configSnapshot() -> reads <JS_PLUS_PATH>/config/Logger.properties
 // Loaded by each suite (TestConsole.js / TestCache.js / TestFile.js / ...):
 //   load(System.getProperty("JS_PLUS_PATH") + "../test/TestBase.js")
 // NOTE: Re-loading this file is harmless (var redeclaration is legal in JS);
 // always call beginTest() at the start of each run to reset counters.
-// The Tomcat-specific helpers of JsPlus-Tomcat (dbVerify/curlStatus/callTomcat)
-// are intentionally NOT carried over: JsPlus-Core has no server, no H2 and no
-// global `tomcat` object.
+// The Tomcat-specific helpers of JsPlus-Tomcat (curlStatus/callTomcat) are
+// intentionally NOT carried over: JsPlus-LogReplaced has no server and no global
+// `tomcat` object. dbVerify IS carried over: this project now ships a real H2
+// database (logdb on :3308) and the engine persists logs into app_logger_msg, so
+// the persisted state is part of what these suites have to verify.
 // ============================================================================
 
 var System = Java.type("java.lang.System");
 var Thread = Java.type("java.lang.Thread");
+var StringBuilder = Java.type("java.lang.StringBuilder");
 var HashMap = Java.type("java.util.HashMap");
 var DiskFile = Java.type("com.killcoding.file.DiskFile");
 
@@ -33,6 +40,9 @@ var passCount = 0;
 var failCount = 0;
 var failures = [];
 var results = [];
+// Structured dbVerify outcome {sql, columns, rows} filled by dbVerify() and
+// consumed by check() into the current result row (for the report render).
+var dbvResult = null;
 
 // Reset counters - call at the start of every test run (from each suite).
 function beginTest() {
@@ -41,6 +51,7 @@ function beginTest() {
     failCount = 0;
     failures = [];
     results = [];
+    dbvResult = null;
 }
 
 function escapeHtml(s) {
@@ -99,8 +110,80 @@ function check(params) {
         detail: d,
         objective: (objective === null || objective === undefined) ? "" : ("" + objective),
         objectiveZh: (objectiveZh === null || objectiveZh === undefined) ? "" : ("" + objectiveZh),
-        command: (command === null || command === undefined) ? "" : ("" + command)
+        command: (command === null || command === undefined) ? "" : ("" + command),
+        dbv: dbvResult,
+        // Optional list of extra DB-verify tables ({label, result}); when
+        // present, writeReport renders these instead of the single dbv.
+        dbvList: (params.dbvList === null || params.dbvList === undefined) ? null : params.dbvList
     });
+    dbvResult = null;
+}
+
+// Optional DB verification: run a native SQL SELECT against the database so
+// testers can verify the persisted table state directly (JsPlus-Core's
+// dbVerify). sqlFn must return a SELECT statement.
+// The connection MUST come from Console.getDataSource() - the runtime's
+// configured project datasource (<JS_PLUS_PATH>/config/DataSource.properties ->
+// jdbc:h2:tcp://localhost:3308/logdb, sample_user), i.e. the same source the
+// runtime uses (ScriptConsole.getDataSource() reads DataSource.properties into
+// a DriverDataSource). The structured outcome {sql, columns, rows} (max 30 rows)
+// is stored in dbvResult for writeReport to render as a nested table; the
+// returned inline text keeps the console output readable.
+// NOTE: the query runs over plain JDBC (Connection.createStatement) instead of
+// CacheDriverExecutor.find(): find() writes results into a CacheArray whose
+// worker-thread/filter design is async and is not suited to the suite's
+// synchronous assertion read (the GraalJS context forbids multi-threaded access,
+// and the filter thread removes entries / clears the cache as it processes
+// them). A plain JDBC query is deterministic here while checking the same
+// persisted state; the connection itself still comes from the project
+// datasource.
+function dbVerify(sqlFn) {
+    var conn = null;
+    var stmt = null;
+    var rs = null;
+    var sql;
+    var result = { sql: "", columns: [], rows: [] };
+    try {
+        sql = sqlFn();
+        conn = Console.getDataSource().getConnection();
+        stmt = conn.createStatement();
+        rs = stmt.executeQuery(sql);
+        var rsmd = rs.getMetaData();
+        var c = rsmd.getColumnCount();
+        for (var k = 0; k < c; k++) {
+            result.columns.push(rsmd.getColumnLabel(k + 1) + "");
+        }
+        while (rs.next() && result.rows.length < 30) {
+            var row = [];
+            for (var k = 0; k < c; k++) {
+                var v = rs.getObject(k + 1);
+                row.push(v === null ? "null" : ("" + v));
+            }
+            result.rows.push(row);
+        }
+        result.sql = sql;
+        dbvResult = result;
+        var sb = new StringBuilder();
+        for (var i = 0; i < result.rows.length; i++) {
+            sb.append((i > 0 ? "\n" : "") + "[" + result.rows[i].join(" ") + "]");
+        }
+        return "\n | dbVerify: " + sql + "\n   -> " + (result.rows.length > 0 ? sb.toString() : "(0 rows)");
+    } catch (e) {
+        result.sql = (sql !== undefined ? sql : "<sqlFn failed>");
+        result.error = "" + e;
+        dbvResult = result;
+        return "\n | dbVerify: " + result.sql + "\n   -> (query failed) " + e;
+    } finally {
+        if (rs !== null && rs !== undefined) {
+            try { rs.close(); } catch (e2) {}
+        }
+        if (stmt !== null && stmt !== undefined) {
+            try { stmt.close(); } catch (e3) {}
+        }
+        if (conn !== null && conn !== undefined) {
+            try { conn.close(); } catch (e4) {}
+        }
+    }
 }
 
 // Read the runtime log config lines of <JS_PLUS_PATH>/config/Logger.properties
@@ -134,7 +217,7 @@ function writeReport() {
     // REPORT_TITLE may be set by the test suite (e.g. TestCache.js);
     // fall back to a generic title so TestBase works standalone too.
     var reportTitle = (typeof REPORT_TITLE !== "undefined" && REPORT_TITLE !== null && REPORT_TITLE.length > 0)
-        ? REPORT_TITLE : "JsPlus-Core Test Report";
+        ? REPORT_TITLE : "JsPlus-LogReplaced Test Report";
     var rows = "";
     for (var i = 0; i < results.length; i++) {
         var cls = results[i].ok ? "pass" : "fail";
@@ -143,13 +226,56 @@ function writeReport() {
         var objective = escapeHtml(results[i].objective);
         var objectiveZh = escapeHtml(results[i].objectiveZh);
         var command = escapeHtml(results[i].command);
+        // DB-verify outcome rendered the JsPlus-Core way: a yellow-tinted nested
+        // table (row num + columns) under the detail cell. A case may carry
+        // several labelled verify tables (dbvList); otherwise the single dbv is
+        // rendered as before.
+        function renderDbv(label, dbv) {
+            var prefix = (label === null || label === undefined || ("" + label).length === 0)
+                ? "dbVerify" : ("" + label);
+            var dbvSql = escapeHtml(dbv.sql);
+            if (dbv.error !== undefined && dbv.error !== null && ("" + dbv.error).length > 0) {
+                return "<span class=\"dbv\">" + prefix + ": " + dbvSql
+                    + "<br>(query failed) " + escapeHtml(dbv.error) + "</span>";
+            }
+            if (dbv.rows.length === 0) {
+                return "<span class=\"dbv\">" + prefix + ": " + dbvSql + "<br>(0 rows)</span>";
+            }
+            var h = "<span class=\"dbv\">" + prefix + ": " + dbvSql
+                + "<br><table class=\"dbv-table\"><tr><th>row num</th>";
+            for (var ci = 0; ci < dbv.columns.length; ci++) {
+                h += "<th>" + escapeHtml(dbv.columns[ci]) + "</th>";
+            }
+            h += "</tr>";
+            for (var ri = 0; ri < dbv.rows.length; ri++) {
+                h += "<tr><td>" + (ri + 1) + "</td>";
+                for (var cj = 0; cj < dbv.columns.length; cj++) {
+                    h += "<td>" + escapeHtml(dbv.rows[ri][cj]) + "</td>";
+                }
+                h += "</tr>";
+            }
+            h += "</table></span>";
+            return h;
+        }
+        var dbvHtml = "";
+        var dbvList = results[i].dbvList;
+        if (dbvList !== null && dbvList !== undefined && dbvList.length > 0) {
+            for (var bi = 0; bi < dbvList.length; bi++) {
+                dbvHtml += renderDbv(dbvList[bi].label, dbvList[bi].result);
+            }
+        } else {
+            var dbv = results[i].dbv;
+            if (dbv !== null && dbv !== undefined) {
+                dbvHtml = renderDbv("dbVerify", dbv);
+            }
+        }
         // Sequential, per-row case id: first row = C1, second = C2, ...
         var caseCell = "C" + (i + 1);
         rows += "<tr class=\"" + cls + "\"><td>" + caseCell + "</td><td class=\"name\">" + escapeHtml(results[i].name)
               + (objective.length > 0 ? "<br><span class=\"obj\">" + objective + "</span>" : "")
               + (objectiveZh.length > 0 ? "<br><span class=\"objZh\">" + objectiveZh + "</span>" : "")
               + (command.length > 0 ? "<br><span class=\"cmd\">" + command + "</span>" : "")
-              + "</td><td class=\"badge\">" + badge + "</td><td>" + detail + "</td></tr>\n";
+              + "</td><td class=\"badge\">" + badge + "</td><td>" + detail + dbvHtml + "</td></tr>\n";
     }
     var cfgLines = configSnapshot();
     var cfgSection = "";
@@ -181,6 +307,10 @@ function writeReport() {
         + "  td.name span.cmd { display: block; color: #8c959f; font-size: 11px; margin-top: 2px; font-family: Consolas, 'Courier New', monospace; word-break: break-all; }\n"
         + "  td.badge { width: 70px; }\n"
         + "  pre.cfg { background: #fff; border: 1px solid #d0d7de; padding: 10px; font-size: 12px; overflow-x: auto; }\n"
+        + "  td .dbv { display: block; color: #9a6700; font-size: 12px; margin-top: 8px; word-break: break-all; }\n"
+        + "  td .dbv table.dbv-table { border-collapse: collapse; width: auto; margin-top: 4px; font-size: 11px; }\n"
+        + "  td .dbv table.dbv-table th { background: #fef3c7; color: #9a6700; padding: 2px 8px; border: 1px solid #d0d7de; text-align: left; font-weight: normal; }\n"
+        + "  td .dbv table.dbv-table td { background: #fffdf5; color: #24292f; padding: 2px 8px; border: 1px solid #d0d7de; }\n"
         + "</style>\n"
         + "</head>\n"
         + "<body>\n"
@@ -201,11 +331,11 @@ function writeReport() {
         var reportName = (typeof REPORT_NAME !== "undefined" && REPORT_NAME !== null && REPORT_NAME.length > 0)
             ? REPORT_NAME : "TestAll-Report.html";
         var File = Java.type("java.io.File");
-        var reportDir = new File(System.getProperty("JS_PLUS_PATH") + "../test_reports");
+        var reportDir = new File(System.getProperty("JS_PLUS_PATH") + "../docs/latest/report");
         if (!reportDir.exists()) {
             reportDir.mkdirs();
         }
-        var reportPath = System.getProperty("JS_PLUS_PATH") + "../test_reports/" + reportName;
+        var reportPath = System.getProperty("JS_PLUS_PATH") + "../docs/latest/report/" + reportName;
         var report = new DiskFile(reportPath);
         report.write(html, "UTF-8");
         print("Test report written to " + reportPath);
@@ -215,11 +345,11 @@ function writeReport() {
 }
 
 // Markdown test report - mirrors writeReport() but emits a GitHub-friendly
-// Markdown file into <PROJECT_ROOT>/test_reports/<REPORT_NAME>.md via DiskFile.
+// Markdown file into <PROJECT_ROOT>/docs/latest/report/<REPORT_NAME>.md via DiskFile.
 function writeMd() {
     var durationMs = Date.now() - suiteStart;
     var reportTitle = (typeof REPORT_TITLE !== "undefined" && REPORT_TITLE !== null && REPORT_TITLE.length > 0)
-        ? REPORT_TITLE : "JsPlus-Core Test Report";
+        ? REPORT_TITLE : "JsPlus-LogReplaced Test Report";
     var md = "# " + escapeMd(reportTitle) + "\n\n";
     md += "Generated: " + escapeMd(new Date().toString()) + " | Duration: " + durationMs
         + " ms | Mode: " + (CONSOLE_MODE ? "console" : "standalone") + "\n\n";
@@ -237,6 +367,25 @@ function writeMd() {
             + (results[i].objective.length > 0 ? " — " + escapeMd(results[i].objective) : "")
             + (results[i].objectiveZh.length > 0 ? " — " + escapeMd(results[i].objectiveZh) : "")
             + (results[i].command.length > 0 ? " / `" + escapeMd(results[i].command) + "`" : "");
+        var dbvListMd = results[i].dbvList;
+        var dbvItemsMd = [];
+        if (dbvListMd !== null && dbvListMd !== undefined && dbvListMd.length > 0) {
+            for (var bi = 0; bi < dbvListMd.length; bi++) {
+                dbvItemsMd.push({ label: dbvListMd[bi].label, dbv: dbvListMd[bi].result });
+            }
+        } else if (results[i].dbv !== null && results[i].dbv !== undefined) {
+            dbvItemsMd.push({ label: "dbVerify", dbv: results[i].dbv });
+        }
+        for (var di = 0; di < dbvItemsMd.length; di++) {
+            var dbv = dbvItemsMd[di].dbv;
+            var dbvLabel = (dbvItemsMd[di].label === null || dbvItemsMd[di].label === undefined
+                || ("" + dbvItemsMd[di].label).length === 0) ? "dbVerify" : ("" + dbvItemsMd[di].label);
+            var dbvRowsTxt = dbv.rows.length === 0 ? "(0 rows)"
+                : dbv.rows.map(function (r) { return "[" + r.join(" ") + "]"; }).join(" ");
+            detail += " / " + dbvLabel + ": `" + escapeMd(dbv.sql) + "` -> "
+                + ((dbv.error !== undefined && dbv.error !== null && ("" + dbv.error).length > 0)
+                    ? "(query failed) " + escapeMd(dbv.error) : dbvRowsTxt);
+        }
         md += "| C" + (i + 1) + " | " + nameCell + " | " + badge + " | " + detail + " |\n";
     }
     try {
@@ -246,11 +395,11 @@ function writeMd() {
             reportName = reportName.substring(0, reportName.length - 5) + ".md";
         }
         var File = Java.type("java.io.File");
-        var reportDir = new File(System.getProperty("JS_PLUS_PATH") + "../test_reports");
+        var reportDir = new File(System.getProperty("JS_PLUS_PATH") + "../docs/latest/report");
         if (!reportDir.exists()) {
             reportDir.mkdirs();
         }
-        var reportPath = System.getProperty("JS_PLUS_PATH") + "../test_reports/" + reportName;
+        var reportPath = System.getProperty("JS_PLUS_PATH") + "../docs/latest/report/" + reportName;
         var report = new DiskFile(reportPath);
         report.write(md, "UTF-8");
         print("Markdown report written to " + reportPath);
@@ -260,12 +409,12 @@ function writeMd() {
 }
 
 // CI-oriented summary - writes a compact Markdown file into
-// <PROJECT_ROOT>/test_reports/ so the CI job can surface it after a run:
-//   1) it is included in the uploaded test_reports/ artifact (downloadable),
+// <PROJECT_ROOT>/docs/latest/report/ so the CI job can surface it after a run:
+//   1) it is included in the uploaded docs/latest/report/ artifact (downloadable),
 //   2) the workflow can append it to $GITHUB_STEP_SUMMARY so the GitHub
 //      Actions run page shows the result without opening the artifact.
 // Params (all optional):
-//   title          - report heading (default "JsPlus-Core CI Summary")
+//   title          - report heading (default "JsPlus-LogReplaced CI Summary")
 //   reportName     - output file name (default "TestAll-CI-Summary.md")
 //   pass / fail    - counters (default: current passCount / failCount)
 //   failures       - array of failed check names (default: current failures)
@@ -279,7 +428,7 @@ function writeMd() {
 function writeCiSummary(params) {
     var p = params || {};
     var reportTitle = (p.title !== undefined && p.title !== null && p.title.length > 0)
-        ? p.title : "JsPlus-Core CI Summary";
+        ? p.title : "JsPlus-LogReplaced CI Summary";
     var pass = (p.pass !== undefined && p.pass !== null) ? p.pass : passCount;
     var fail = (p.fail !== undefined && p.fail !== null) ? p.fail : failCount;
     var failList = p.failures || failures;
@@ -322,11 +471,11 @@ function writeCiSummary(params) {
         var reportName = (p.reportName !== undefined && p.reportName !== null && p.reportName.length > 0)
             ? p.reportName : "TestAll-CI-Summary.md";
         var File = Java.type("java.io.File");
-        var reportDir = new File(System.getProperty("JS_PLUS_PATH") + "../test_reports");
+        var reportDir = new File(System.getProperty("JS_PLUS_PATH") + "../docs/latest/report");
         if (!reportDir.exists()) {
             reportDir.mkdirs();
         }
-        var reportPath = System.getProperty("JS_PLUS_PATH") + "../test_reports/" + reportName;
+        var reportPath = System.getProperty("JS_PLUS_PATH") + "../docs/latest/report/" + reportName;
         var report = new DiskFile(reportPath);
         report.write(md, "UTF-8");
         print("CI summary written to " + reportPath);

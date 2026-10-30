@@ -1,0 +1,19 @@
+-- ============================================================================
+-- JsPlus-LogReplaced database reset script (fallback)
+-- ----------------------------------------------------------------------------
+-- Drops the project's TEST tables so the schema can be rebuilt cleanly by
+-- change.sql (same two-stage init as JsPlus-Core: fallback.sql -> change.sql).
+-- NOTE: app_logger_config / app_logger_msg are BUSINESS tables - they are
+--       deliberately NOT dropped here. They hold the logger configuration and
+--       the log records themselves, so a reset must never destroy them; the
+--       init only ensures they exist (CREATE TABLE IF NOT EXISTS in change.sql).
+-- NOTE: run with the H2 server STOPPED (JsPlus/bin/StopH2.bat) - the init path
+--       opens the database file directly and a running server holds the lock.
+-- NOTE: this project currently ships no dedicated test_* tables, so there is
+--       nothing to drop yet. The file is kept so that the init flow stays
+--       identical to JsPlus-Core; add DROP TABLE IF EXISTS lines here when
+--       test tables are introduced.
+-- ============================================================================
+
+-- (no test tables yet - app_logger_config / app_logger_msg are intentionally
+--  left untouched)

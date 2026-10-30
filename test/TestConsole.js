@@ -1,11 +1,11 @@
 // ============================================================================
-// JsPlus-Core TestConsole - console environment test suite
+// JsPlus-LogReplaced TestConsole - console environment test suite
 // ----------------------------------------------------------------------------
 // Run      : test/TestAll.bat / test/TestAll.sh (or inside the JsPlus console:
 //              Console.eval(<PROJECT_ROOT>/test/TestConsole.js))
 // Harness  : Shared plumbing (Java bindings, counters, check and writeReport)
 //            lives in TestBase.js and is loaded below.
-// Output   : <PROJECT_ROOT>/test_reports/TestConsole-Report.html (green PASS /
+// Output   : <PROJECT_ROOT>/docs/latest/report/TestConsole-Report.html (green PASS /
 //            red FAIL per check), written with DiskFile.
 // Coverage : The JsPlus console environment the other suites rely on:
 //            JS_PLUS_PATH resolution, global Console object, evalScript/load/
@@ -28,9 +28,9 @@ beginTest();
 
 // Report file name and title for this suite (consumed by writeReport in TestBase.js).
 var REPORT_NAME = "TestConsole-Report.html";
-var REPORT_TITLE = "JsPlus-Core Console Environment Test Report";
+var REPORT_TITLE = "JsPlus-LogReplaced Console Environment Test Report";
 
-print("=== JsPlus-Core Console Environment Test ===");
+print("=== JsPlus-LogReplaced Console Environment Test ===");
 print("JS_PLUS_PATH: " + System.getProperty("JS_PLUS_PATH"));
 print("Mode        : " + (CONSOLE_MODE ? "console" : "standalone"));
 
