@@ -98,6 +98,53 @@ fi
 echo "Using \"$JvmParams\""
 
 # ------------------------------------------------------------------
+# Step 0b: stop any existing services, then make sure H2 is listening
+# before the suites run. The suites' dbVerify assertions read
+# app_logger_msg through the TCP pool (logdb on :H2_PORT), so a dead or
+# half-dead H2 fails the persistence checks. Same shape as
+# JsPlus-Tomcat/TestAll.sh Step 0/1: StopAll -> H2 init -> BG_StartH2.
+# ------------------------------------------------------------------
+export H2_PORT="${JsPlus_H2_PORT:-3308}"
+echo "[TestAll] H2 port: $H2_PORT"
+
+echo "[TestAll] Stopping existing services..."
+"${JS_PLUS_PATH}bin/StopAll.sh" || true
+
+echo "[TestAll] Initializing database logdb..."
+if ! "${JS_PLUS_PATH}bin/StartH2Console.sh" init logdb; then
+    echo "[TestAll] ERROR: Database initialization failed."
+    exit 1
+fi
+
+# Start + wait with ONE in-place retry: a just-killed H2 can still hold the
+# port in TIME_WAIT, so the first start never binds - the known flakiness of
+# this project's H2 bootstrap.
+H2_READY=0
+for attempt in 1 2; do
+    if [ "$H2_READY" = "1" ]; then
+        break
+    fi
+    echo "[TestAll] Starting H2 server on port $H2_PORT, attempt $attempt ..."
+    "${JS_PLUS_PATH}bin/BG_StartH2.sh" "$SCRIPT_ENGINE" || true
+    for i in $(seq 1 30); do
+        if (netstat -tln 2>/dev/null | grep -q ":$H2_PORT .*LISTEN") || (ss -tln 2>/dev/null | grep -q ":$H2_PORT .*LISTEN"); then
+            H2_READY=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$H2_READY" != "1" ]; then
+        echo "[TestAll] WARN: H2 not listening after 30s, retrying..."
+        "${JS_PLUS_PATH}bin/StopAll.sh" || true
+    fi
+done
+if [ "$H2_READY" != "1" ]; then
+    echo "[TestAll] ERROR: H2 did not start on port $H2_PORT after 2 attempts."
+    exit 1
+fi
+echo "[TestAll] H2 ready."
+
+# ------------------------------------------------------------------
 # Run TestAll.js against this JVM.
 # JSPLUS_TEST_EXIT=1 tells TestAll.js to System.exit(0) after finishing
 # (interactive Console.eval runs skip it). "< /dev/null" closes stdin: the
@@ -142,5 +189,13 @@ else
     KEPT=$(ls -1 "$REPORTS_DIR"/*.jar 2>/dev/null | wc -l | tr -d " ")
     echo "[TestAll] Pruned docs/reports to newest 10 (${KEPT} jars kept)"
 fi
+# ------------------------------------------------------------------
+# Step 2c: leave nothing behind. The H2 server started in Step 0b is
+# stopped here (same as JsPlus-Tomcat/TestAll.sh Step 3); RC was captured
+# right after TestAll.js so this never changes the exit code.
+# ------------------------------------------------------------------
+echo "[TestAll] Stopping all remaining services..."
+"${JS_PLUS_PATH}bin/StopAll.sh" || true
+
 echo "TestAll exit code: $RC"
 exit "$RC"

@@ -7,6 +7,9 @@
 --       deliberately NOT dropped here. They hold the logger configuration and
 --       the log records themselves, so a reset must never destroy them; the
 --       init only ensures they exist (CREATE TABLE IF NOT EXISTS in change.sql).
+-- NOTE: ghost_remote_command is the GhostConsole runtime table - same rule,
+--       NEVER drop it (a running GhostConsole would break mid-run). Mirrored
+--       from JsPlus-Core/dbscript/fallback.sql.
 -- NOTE: run with the H2 server STOPPED (JsPlus/bin/StopH2.bat) - the init path
 --       opens the database file directly and a running server holds the lock.
 -- NOTE: this project currently ships no dedicated test_* tables, so there is

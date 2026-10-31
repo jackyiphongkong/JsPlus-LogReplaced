@@ -56,7 +56,7 @@ try {
 print("=== JsPlus-LogReplaced TestAll (unified entry) ===");
 print("JS_PLUS_PATH: " + System.getProperty("JS_PLUS_PATH"));
 print("Suites       : TestConsole -> TestLog");
-print("              -> TestSlf4j -> TestCommonsLogging -> TestJuli -> TestLog4j -> TestLog4j2");
+print("              -> TestSlf4j -> TestAppLoggerConfig -> TestCommonsLogging -> TestJuli -> TestLog4j -> TestLog4j2");
 print("              -> LoadTest (last: 16.5k burst lines, async-flush assertions)");
 
 var suites = [
@@ -65,10 +65,14 @@ var suites = [
     // Replacement-layer vendor suites (one per logging family). They do not
     // exit here: their System.exit only fires under JSPLUS_FACADE_EXIT=1.
     { file: "TestSlf4j.js",          title: "TestSlf4j" },
+    // The app_logger_config remote-level cases have their own suite: it writes
+    // the per-host row (DEBUG -> WARN) and restores INFO before returning, so
     { file: "TestCommonsLogging.js", title: "TestCommonsLogging" },
     { file: "TestJuli.js",           title: "TestJuli" },
     { file: "TestLog4j.js",          title: "TestLog4j" },
     { file: "TestLog4j2.js",         title: "TestLog4j2" },
+       // the Level=INFO assumptions of the suites below still hold.
+    { file: "TestAppLoggerConfig.js", title: "TestAppLoggerConfig" },
     // Load suite LAST: it enqueues ~16.5k lines (burst, 8 KB payloads,
     // throwables, multi-logger, level gate), so it must not run before any
     // suite that asserts on freshly written lines. Its System.exit only fires
@@ -171,7 +175,8 @@ try {
     md += "| Suite | Passed | Failed |\n";
     md += "| --- | --- | --- |\n";
     for (var m = 0; m < suiteResults.length; m++) {
-        md += "| " + suiteResults[m].title + " | " + suiteResults[m].pass + " | " + suiteResults[m].fail + " |\n";
+        var suiteName = suiteResults[m].title;
+        md += "| [" + suiteName + "](" + suiteName + "-Report.html) | " + suiteResults[m].pass + " | " + suiteResults[m].fail + " |\n";
     }
     var reportPath = basePath + "../docs/latest/report/TestAll-Report.md";
     var report = new DiskFile(reportPath);
@@ -198,7 +203,8 @@ try {
         + (cfgCheck.ok ? "PASS: " + cfgCheck.detail : "FAIL: " + cfgCheck.detail) + "</div>\n"
         + "<table>\n<tr><th>Suite</th><th>Passed</th><th>Failed</th></tr>\n";
     for (var m2 = 0; m2 < suiteResults.length; m2++) {
-        html += "<tr><td>" + suiteResults[m2].title + "</td><td>" + suiteResults[m2].pass + "</td><td>" + suiteResults[m2].fail + "</td></tr>\n";
+        var suiteName2 = suiteResults[m2].title;
+        html += "<tr><td><a href=\"" + suiteName2 + "-Report.html\">" + suiteName2 + "</a></td><td>" + suiteResults[m2].pass + "</td><td>" + suiteResults[m2].fail + "</td></tr>\n";
     }
     html += "</table>\n</body>\n</html>\n";
     var htmlPath = basePath + "../docs/latest/report/TestAll-Report.html";

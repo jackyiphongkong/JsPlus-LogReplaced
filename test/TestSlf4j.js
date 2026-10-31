@@ -22,10 +22,9 @@
 //              S12 atX() on a disabled level returns the inert NOOP builder
 //              S13 atLevel(Level) + isEnabledForLevel(Level) work
 //              S14 getILoggerFactory() + makeLoggingEventBuilder(Level)
-//              S15 app_logger_config remote level is applied: INSERT/UPDATE
-//                  the per-host row and verify the probes flip and the real
-//                  sink follows (DEBUG -> WARN -> restore INFO; the row is
-//                  kept, test data is never deleted - project rule)
+//              (S15 - the app_logger_config remote-level cases - moved out to
+//               test/TestAppLoggerConfig.js so the remote-config path has its
+//               own suite; this suite no longer touches that table.)
 // Exit     : 0 when every case passed, 1 otherwise (CI can gate on it).
 // ============================================================================
 
@@ -322,145 +321,6 @@ check({
     objectiveZh: "驗證 getILoggerFactory().getLogger(String) 與 makeLoggingEventBuilder(Level) 可用",
     command: "LoggerFactory.getILoggerFactory().getLogger(name).makeLoggingEventBuilder(Level.INFO).log()"
 });
-
-// Case S15
-// DatabaseOut remote config (app_logger_config): the engine re-reads
-// DatabaseOutConfigFrom at most every DatabaseOutRefreshConfigTimer (code
-// default 60000 ms) and applies the row's "level" through Logger.setLevel,
-// so writing (or updating) this per-host row must flip the probes and gate
-// the real sink. Sequence: level=DEBUG -> probe + debug reaches the sink,
-// update level=WARN -> warn lands / debug filtered, restore level=INFO so
-// the suites that follow keep their Level=INFO assumptions. The row itself
-// is kept: test data is never deleted (project rule).
-function dbUpdate(sql) {
-    var conn = null;
-    var stmt = null;
-    try {
-        conn = Console.getDataSource().getConnection();
-        stmt = conn.createStatement();
-        stmt.executeUpdate(sql);
-        return true;
-    } catch (e) {
-        print("[WARN] dbUpdate failed: " + sql + " -> " + e);
-        return false;
-    } finally {
-        if (stmt !== null && stmt !== undefined) { try { stmt.close(); } catch (e2) {} }
-        if (conn !== null && conn !== undefined) { try { conn.close(); } catch (e3) {} }
-    }
-}
-function dbScalar(sql) {
-    var conn = null;
-    var stmt = null;
-    var rs = null;
-    try {
-        conn = Console.getDataSource().getConnection();
-        stmt = conn.createStatement();
-        rs = stmt.executeQuery(sql);
-        if (rs.next()) {
-            var v = rs.getObject(1);
-            return v === null || v === undefined ? null : ("" + v);
-        }
-        return null;
-    } catch (e) {
-        print("[WARN] dbScalar failed: " + sql + " -> " + e);
-        return null;
-    } finally {
-        if (rs !== null && rs !== undefined) { try { rs.close(); } catch (e2) {} }
-        if (stmt !== null && stmt !== undefined) { try { stmt.close(); } catch (e3) {} }
-        if (conn !== null && conn !== undefined) { try { conn.close(); } catch (e4) {} }
-    }
-}
-function waitFor(pred, triesMs) {
-    // Poll until pred() is true or the window elapses. The remote-config
-    // refresh runs at most once per DatabaseOutRefreshConfigTimer (60 s), so
-    // the default window covers one full refresh plus flush slack.
-    var waited = 0;
-    while (waited < triesMs) {
-        if (pred()) {
-            return true;
-        }
-        Thread.sleep(500);
-        waited += 500;
-    }
-    return pred();
-}
-var s15Host = dbScalar("SELECT DISTINCT hostname FROM app_logger_msg WHERE hostname IS NOT NULL LIMIT 1");
-var s15CfgRow = null;
-var s15Detail = "";
-if (s15Host === null || s15Host === undefined || s15Host.length === 0) {
-    check({
-        name: "slf4j2 app_logger_config remote level is applied (S15)",
-        ok: false,
-        detail: "no hostname found in app_logger_msg - cannot address the per-host config row",
-        objective: "Verify a level written to app_logger_config is picked up and gates the sink",
-        objectiveZh: "驗證寫入 app_logger_config 的 level 會被引擎套用並管制輸出",
-        command: "INSERT/UPDATE app_logger_config (hostname, level) -> probes + sink"
-    });
-} else {
-    // Ensure exactly one active row exists for this host (idempotent across
-    // runs): reuse an existing active row or create a fresh one.
-    s15CfgRow = dbScalar("SELECT id FROM app_logger_config WHERE hostname = '" + s15Host + "' AND deleted = FALSE LIMIT 1");
-    if (s15CfgRow === null || s15CfgRow === undefined) {
-        s15CfgRow = ("s15" + System.nanoTime()).substring(0, 16);
-        dbUpdate("INSERT INTO app_logger_config (id, hostname, level, created_at, updated_at, deleted) VALUES ('"
-            + s15CfgRow + "', '" + s15Host + "', 'DEBUG', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, FALSE)");
-    } else {
-        dbUpdate("UPDATE app_logger_config SET level = 'DEBUG', updated_at = CURRENT_TIMESTAMP, deleted = FALSE "
-            + "WHERE hostname = '" + s15Host + "' AND deleted = FALSE");
-    }
-    // Phase A: level=DEBUG must be absorbed by the remote-config refresh.
-    var s15aProbe = waitFor(function () { return log.isDebugEnabled(); }, 70000);
-    var s15aLine = null;
-    if (s15aProbe) {
-        log.debug("S15 " + tag + " remote-debug");
-        s15aLine = appLogLine("S15 " + tag, "DEBUG ");
-    }
-    check({
-        name: "slf4j2 app_logger_config remote level DEBUG is applied (S15)",
-        ok: s15aProbe && s15aLine !== null,
-        detail: "isDebugEnabled=" + s15aProbe + ", debug line=" + (s15aLine === null ? "null" : "written")
-            + (s15aProbe ? "" : " (remote refresh not observed within 70s)"),
-        objective: "Verify a DEBUG level row in app_logger_config enables debug probing and writing",
-        objectiveZh: "驗證 app_logger_config 的 DEBUG 級別令 debug 探測與寫入均生效",
-        command: "INSERT app_logger_config(hostname,level='DEBUG') -> isDebugEnabled() && log.debug() reaches sink"
-    });
-    // Phase B: update to WARN -> warn lands, debug is filtered.
-    var s15bUpd = dbUpdate("UPDATE app_logger_config SET level = 'WARN', updated_at = CURRENT_TIMESTAMP "
-        + "WHERE hostname = '" + s15Host + "' AND deleted = FALSE");
-    var s15bProbe = waitFor(function () { return log.isWarnEnabled() && !log.isInfoEnabled() && !log.isDebugEnabled(); }, 70000);
-    var s15bLine = null;
-    var s15bLeak = false;
-    if (s15bProbe) {
-        log.warn("S15 " + tag + " remote-warn");
-        s15bLine = appLogLine("S15 " + tag, "WARN ");
-        log.debug("S15 " + tag + " remote-debug-filtered");
-        s15bLeak = appLogContains("S15 " + tag + " remote-debug-filtered", 6);
-    }
-    check({
-        name: "slf4j2 app_logger_config level update to WARN is applied (S15)",
-        ok: s15bUpd && s15bProbe && s15bLine !== null && !s15bLeak,
-        detail: "isWarnEnabled=" + s15bProbe + ", warn line=" + (s15bLine === null ? "null" : "written")
-            + ", debug leaked=" + s15bLeak + (s15bProbe ? "" : " (remote refresh not observed within 70s)"),
-        objective: "Verify updating the row's level to WARN re-gates probes and filtering",
-        objectiveZh: "驗證把 level 更新為 WARN 後探測與過濾即時跟隨",
-        command: "UPDATE app_logger_config SET level='WARN' -> isWarnEnabled() && debug filtered"
-    });
-    // Phase C (always): restore INFO so the suites that follow keep their
-    // Level=INFO assumptions. The row stays (never deleted).
-    dbUpdate("UPDATE app_logger_config SET level = 'INFO', updated_at = CURRENT_TIMESTAMP "
-        + "WHERE hostname = '" + s15Host + "' AND deleted = FALSE");
-    var s15cRestore = waitFor(function () { return log.isInfoEnabled() && !log.isWarnEnabled() && !log.isDebugEnabled(); }, 70000);
-    check({
-        name: "slf4j2 app_logger_config level restored to INFO (S15)",
-        ok: s15cRestore,
-        detail: "isInfoEnabled=" + s15cRestore + (s15cRestore ? "" : " (restore refresh not observed within 70s - later suites may be affected)"),
-        objective: "Verify the config row is restored to INFO (row kept, suites unaffected)",
-        objectiveZh: "驗證 level 已還原為 INFO（資料行保留，不影響後續套件）",
-        command: "UPDATE app_logger_config SET level='INFO' -> isInfoEnabled() restored"
-    });
-    s15Detail = "host=" + s15Host + ", cfgRow=" + s15CfgRow;
-    print("[S15] " + s15Detail);
-}
 
 // Case S8
 // dbVerify on the persisted state: the engine's DatabaseOut path writes these

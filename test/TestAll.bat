@@ -100,6 +100,52 @@ if "%JvmParams%"=="" (
 echo Using "%JvmParams%"
 
 REM ------------------------------------------------------------------
+REM Step 0b: stop any existing services, then make sure H2 is listening
+REM before the suites run. The suites' dbVerify assertions read
+REM app_logger_msg through the TCP pool (logdb on :H2_PORT), so a dead or
+REM half-dead H2 fails the persistence checks. Same shape as
+REM JsPlus-Tomcat/TestAll.bat Step 0/1: StopAll -> H2 init -> BG_StartH2.
+REM ------------------------------------------------------------------
+if not defined JsPlus_H2_PORT set "JsPlus_H2_PORT=3308"
+set "H2_PORT=%JsPlus_H2_PORT%"
+echo [TestAll] H2 port: %H2_PORT%
+
+echo [TestAll] Stopping existing services...
+call "%JS_PLUS_PATH%bin\StopAll.bat"
+
+echo [TestAll] Initializing database logdb...
+call "%JS_PLUS_PATH%bin\StartH2Console.bat" init logdb
+if errorlevel 1 (
+    echo [TestAll] ERROR: Database initialization failed.
+    exit /b 1
+)
+
+REM Start + wait with ONE in-place retry: a just-killed H2 can still hold the
+REM port (TIME_WAIT) so the first start never binds - the known flakiness of
+REM this project's H2 bootstrap.
+set "H2_READY="
+for /l %%a in (1,1,2) do (
+    if not defined H2_READY (
+        echo [TestAll] Starting H2 server on port %H2_PORT%, attempt %%a ...
+        call "%JS_PLUS_PATH%bin\BG_StartH2.bat" %SCRIPT_ENGINE%
+        for /l %%i in (1,1,30) do (
+            netstat -ano | findstr ":%H2_PORT%" | findstr "LISTENING" >nul 2>&1
+            if not errorlevel 1 set "H2_READY=1"
+            if defined H2_READY goto :h2_ready
+            ping -n 2 127.0.0.1 >nul 2>&1
+        )
+        echo [TestAll] WARN: H2 not listening after 30s, retrying...
+        call "%JS_PLUS_PATH%bin\StopAll.bat"
+    )
+)
+:h2_ready
+if not defined H2_READY (
+    echo [TestAll] ERROR: H2 did not start on port %H2_PORT% after 2 attempts.
+    exit /b 1
+)
+echo [TestAll] H2 ready.
+
+REM ------------------------------------------------------------------
 REM Run TestAll.js against this JVM.
 REM JSPLUS_TEST_EXIT=1 tells TestAll.js to System.exit(0) after finishing
 REM (interactive Console.eval runs skip it). "< NUL" closes stdin: the JsPlus
@@ -139,6 +185,15 @@ if not defined PROJ_FNAME (
     powershell -NoProfile -Command "$d='%JS_PLUS_PATH_ORIGIN%..\docs\reports'; $jars=@(Get-ChildItem -LiteralPath $d -Filter *.jar | Sort-Object LastWriteTime); if($jars.Count -gt 10){ $jars | Select-Object -First ($jars.Count-10) | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }; Write-Output ('[TestAll] Pruned docs/reports to newest 10 (' + (Get-ChildItem -LiteralPath $d -Filter *.jar).Count + ' jars kept)') }"
 )
 
+REM ------------------------------------------------------------------
+REM Step 2c: leave nothing behind. The H2 server started in Step 0b is
+REM stopped here (same as JsPlus-Tomcat/TestAll.bat Step 3); RC was
+REM captured right after TestAll.js so this never changes the exit code.
+REM ------------------------------------------------------------------
+echo [TestAll] Stopping all remaining services...
+call "%JS_PLUS_PATH%bin\StopAll.bat"
+
+echo TestAll exit code: %RC%
 exit /b %RC%
 
 endlocal

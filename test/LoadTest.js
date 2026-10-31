@@ -351,7 +351,72 @@ function appLogPath() {
     return basePath + "../logs/app/" + LogRecord.getLogFileName();
 }
 
+// Reads the whole app log for today: rotated files (date.N.log) first in
+// ascending N, then the active file (date.log) last. The engine rotates at
+// FileOutMaxFileSize (5mb); a 16.5k-line burst can straddle that boundary,
+// so counting only LogRecord.getLogFileName() would see just the tail in the
+// new file and miss the head that was already archived to date.1.log. We
+// cannot rely on a fresh-log-tree guarantee here: this suite is also run
+// standalone (not only via TestAll.bat), so merge every same-day file.
+// String ops only - no JS regex engine in this GraalVM setup.
 function readAppLog() {
+    var appDirPath = basePath + "../logs/app/";
+    var currentName = "" + LogRecord.getLogFileName();   // e.g. "20261031.log"
+    var dotIdx = currentName.lastIndexOf(".");
+    var datePrefix = dotIdx > 0 ? currentName.substring(0, dotIdx) : currentName;
+
+    function rotRank(n) {
+        if (n === currentName) return 1000000;            // active file goes last
+        var fd = n.indexOf(".");
+        var ld = n.lastIndexOf(".");
+        if (fd > 0 && ld > fd) {
+            var v = parseInt(n.substring(fd + 1, ld), 10);
+            return isNaN(v) ? 0 : v;
+        }
+        return 0;
+    }
+
+    var out = "";
+    var listed = false;
+    try {
+        var Files = Java.type("java.nio.file.Files");
+        var Paths = Java.type("java.nio.file.Paths");
+        var Charset = Java.type("java.nio.charset.StandardCharsets");
+        var dir = Paths.get(appDirPath);
+        if (Files.isDirectory(dir)) {
+            var names = [];
+            var stream = Files.list(dir);
+            try {
+                var it = stream.iterator();
+                while (it.hasNext()) {
+                    var p = "" + it.next().getFileName().toString();
+                    if (p.length > datePrefix.length
+                        && p.substring(0, datePrefix.length) === datePrefix
+                        && p.endsWith(".log")) {
+                        names.push(p);
+                    }
+                }
+            } finally {
+                stream.close();
+            }
+            names.sort(function (a, b) { return rotRank(a) - rotRank(b); });
+            for (var i = 0; i < names.length; i++) {
+                try {
+                    var s = "" + Files.readString(Paths.get(appDirPath + names[i]), Charset.UTF_8);
+                    if (out.length > 0 && out.charAt(out.length - 1) !== "\n") out += "\n";
+                    out += s;
+                } catch (eRead) {
+                    // one file locked mid-rotation - skip it, keep the rest
+                }
+            }
+            listed = true;
+        }
+    } catch (eList) {
+        listed = false;
+    }
+    if (listed && out.length > 0) return out;
+
+    // Fallback: pure single-file read (matches the old behaviour).
     var file = new DiskFile(appLogPath());
     if (!file.exists()) {
         return "";

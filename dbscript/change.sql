@@ -6,7 +6,8 @@
 --          JsPlus/bin/StartH2Console.sh init           (Linux/macOS)
 --          (stop the H2 server first - init opens the DB file directly;
 --           fallback.sql -> change.sql, both idempotent, re-running is safe)
--- Tables:  app_logger_config  - per-logger configuration (Logger.properties)
+-- Tables:  ghost_remote_command - GhostConsole runtime remote-command queue (do NOT drop)
+--          app_logger_config  - per-logger configuration (Logger.properties)
 --          app_logger_msg     - the log records written into the database
 -- ============================================================================
 
@@ -21,6 +22,29 @@ CREATE USER IF NOT EXISTS sample_user PASSWORD 'sample_password';
 GRANT ALL ON SCHEMA PUBLIC TO sample_user;
 -- Promote sample_user to ADMIN
 ALTER USER sample_user ADMIN TRUE;
+
+-- ============================================================================
+-- Table 0: ghost_remote_command (ghost remote command queue)
+-- Purpose: holds remote command rows for ghost consoles (headless runtimes),
+--          used for cross-process / remote control.
+-- NOTE: IF NOT EXISTS on purpose. This table belongs to the runtime
+--       (GhostConsole); tests must NEVER drop/recreate it (a running
+--       GhostConsole would hit "table not found" mid-run). init only
+--       ensures it exists. Mirrored from JsPlus-Core/dbscript/change.sql.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS ghost_remote_command (
+    id CHAR(16) PRIMARY KEY,        -- PK: unique command record id
+    ghost_name VARCHAR(200),        -- Ghost name: which ghost console owns the command
+    request_script VARCHAR(500),    -- Script to be executed by the ghost
+    response_message VARCHAR(500),  -- Text returned by the ghost after execution
+    processed INT,                  -- Processed flag: 0=pending, 1=processed
+    requested INT,                  -- Request counter
+    responsed INT,                  -- Response counter
+    created_at TIMESTAMP,           -- Creation time
+    updated_at TIMESTAMP,           -- Last update time
+    deleted_at TIMESTAMP,           -- Soft-delete time (NULL when active)
+    deleted SMALLINT                -- Soft-delete flag: 0=active, 1=deleted
+);
 
 -- ============================================================================
 -- Table 1: app_logger_config (per-host logger overrides)
