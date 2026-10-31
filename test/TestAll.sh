@@ -107,6 +107,13 @@ echo "Using \"$JvmParams\""
 export H2_PORT="${JsPlus_H2_PORT:-3308}"
 echo "[TestAll] H2 port: $H2_PORT"
 
+# CI-friendly fix: git checkout on GitHub Actions does not preserve the
+# executable bit on .sh files, so direct invocation ("./StopAll.sh") fails
+# with Permission denied. Grant +x on every .sh under JsPlus/bin/ and the
+# test/ dir before calling out to them. Harmless when already executable.
+chmod +x "${JS_PLUS_PATH}bin/"*.sh 2>/dev/null || true
+chmod +x "${BIN_PATH}"*.sh 2>/dev/null || true
+
 echo "[TestAll] Stopping existing services..."
 "${JS_PLUS_PATH}bin/StopAll.sh" || true
 
